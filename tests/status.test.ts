@@ -330,4 +330,51 @@ describe('intervalConsumedPct', () => {
     );
     expect(pct).toBe(120);
   });
+
+  it('computes partial time-based consumption: 6-month interval with 92 days elapsed', () => {
+    // intervalDays = 6 * 30.44 = 182.64
+    // consumedDays = 182.64 - 92 = 90.64
+    // timePct = (90.64 / 182.64) * 100 ≈ 49.63%
+    // Rounded to nearest integer = 50% (or if using Math.round)
+    const pct = intervalConsumedPct(
+      {
+        intervalKm: null,
+        intervalMonths: 6,
+        nextDueKm: null,
+        nextDueDate: '2026-10-12', // exactly 92 days after TODAY
+      },
+      null,
+      TODAY,
+    );
+    // toBeCloseTo with 1 decimal place to account for rounding
+    expect(pct).toBeCloseTo(49.63, 1);
+  });
+
+  it('exact tie in both-overdue label: equal km and day overshoots lead with km', () => {
+    // When both dimensions are overdue by exactly the same amount, km leads per the tie rule
+    const status = computeItemStatus(
+      { nextDueKm: 20000, nextDueDate: '2026-06-22' }, // 20 days overdue
+      20020, // 20 km overdue
+      TODAY,
+    );
+    expect(status.state).toBe('overdue');
+    expect(status.dueInKm).toBe(-20);
+    expect(status.dueInDays).toBe(-20);
+    expect(status.label).toBe('overdue by 20 km');
+  });
+
+  it('due_soon km + ok date combination: label includes both dimensions', () => {
+    // km dimension is due_soon (≤ 1000 km remaining)
+    // date dimension is ok (> 30 days remaining)
+    // overall state is the worse one: due_soon
+    const status = computeItemStatus(
+      { nextDueKm: 20000, nextDueDate: '2026-08-15' }, // 34 days remaining (ok)
+      19200, // 800 km remaining (due_soon, ≤ 1000)
+      TODAY,
+    );
+    expect(status.state).toBe('due_soon');
+    expect(status.dueInKm).toBe(800);
+    expect(status.dueInDays).toBe(34);
+    expect(status.label).toBe('due in 800 km or 34 days');
+  });
 });
