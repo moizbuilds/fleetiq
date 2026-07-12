@@ -33,6 +33,13 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     fileParallelism: false,
+    // 20s ceiling: a single PGlite WASM engine can occasionally take longer
+    // than Vitest's default 5s to BOOT on a loaded machine (a rare miss under
+    // CI-like load). The bottleneck is one-time engine startup, not any
+    // test's logic (which runs in ms), so a generous ceiling removes the last
+    // flake without masking a genuinely slow test.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
   resolve: {
     alias: {
