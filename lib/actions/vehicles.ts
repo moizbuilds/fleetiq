@@ -20,6 +20,7 @@ import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { vehicles, odometerReadings } from '@/lib/db/schema';
 import { createVehicleInputSchema } from '@/lib/types';
+import { MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
 
 // Shape returned to the client on failure. CONCEPT: useActionState (the
 // client hook that calls this action) re-renders the form with whatever
@@ -29,9 +30,6 @@ import { createVehicleInputSchema } from '@/lib/types';
 export interface CreateVehicleState {
   error?: string;
 }
-
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 // FormData values are always strings (or File) — never numbers, booleans,
 // or null — even for a field the form renders as `<input type="number">` or
@@ -100,7 +98,7 @@ export async function createVehicle(
   let photoUrl: string | null = null;
   const photo = formData.get('photo');
   if (process.env.BLOB_READ_WRITE_TOKEN && photo instanceof File && photo.size > 0) {
-    if (!ALLOWED_PHOTO_TYPES.has(photo.type)) {
+    if (!isAllowedPhotoType(photo.type)) {
       return { error: 'Photo must be a JPEG, PNG, or WEBP image.' };
     }
     if (photo.size > MAX_PHOTO_BYTES) {

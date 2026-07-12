@@ -34,6 +34,14 @@ import { isValidVin, mapVpicResult } from '@/lib/vin';
 // the brief: decode failure must never block adding a vehicle).
 const VPIC_TIMEOUT_MS = 10_000;
 const VPIC_UNREACHABLE_MESSAGE = 'VIN service unreachable — add the vehicle manually';
+// MINOR fix: one message for both 400 cases (missing param AND malformed
+// VIN) — previously these were two differently-worded strings ("Missing vin
+// query parameter" vs "VIN must be 17 characters…"), which is one fact (what
+// counts as a usable VIN) written in two places for no reason: a caller
+// hitting this route with no `vin` at all and one hitting it with a
+// too-short VIN both need the exact same fix from the user, so they get the
+// exact same message.
+const INVALID_VIN_MESSAGE = 'Enter a full 17-character VIN (letters I, O, Q are never used).';
 
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
@@ -43,7 +51,7 @@ export async function GET(request: NextRequest) {
 
   const rawVin = request.nextUrl.searchParams.get('vin');
   if (!rawVin) {
-    return NextResponse.json({ error: 'Missing vin query parameter' }, { status: 400 });
+    return NextResponse.json({ error: INVALID_VIN_MESSAGE }, { status: 400 });
   }
 
   // Server-side validation — the UI blocks an obviously-malformed VIN before
@@ -52,10 +60,7 @@ export async function GET(request: NextRequest) {
   // garbage input sent directly via curl/fetch.
   const vin = rawVin.trim().toUpperCase();
   if (!isValidVin(vin)) {
-    return NextResponse.json(
-      { error: 'VIN must be 17 characters (letters and numbers, excluding I, O, Q).' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: INVALID_VIN_MESSAGE }, { status: 400 });
   }
 
   try {
