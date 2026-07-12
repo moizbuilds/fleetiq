@@ -10,11 +10,11 @@
 // throws, just reports success/failure) so the pass/fail is asserted, not
 // assumed.
 import { describe, it, expect } from 'vitest';
-import { aiScheduleSchema, aiInvoiceSchema } from '@/lib/types';
+import { aiScheduleSchema, aiInvoiceSchema, AiScheduleItem } from '@/lib/types';
 
 // A minimal valid schedule item, spread-overridden per test so each case
 // only changes the one field under test.
-const baseItem = {
+const baseItem: AiScheduleItem = {
   name: 'Oil change',
   intervalKm: 10000,
   intervalMonths: null,

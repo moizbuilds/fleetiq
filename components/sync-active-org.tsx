@@ -48,7 +48,9 @@ export function SyncActiveOrg() {
     if (userMemberships.data === undefined || userMemberships.data.length === 0) return;
 
     const firstMembership = userMemberships.data[0];
-    void setActive({ organization: firstMembership.organization.id });
+    void setActive({ organization: firstMembership.organization.id }).catch((err) =>
+      console.warn('FleetIQ: failed to activate organization; falling back to per-request lookup', err),
+    );
     // setActive is intentionally omitted from deps: Clerk's hook returns a
     // stable-enough reference in practice, and re-running this effect only
     // needs to be gated on the data actually changing, not on identity
