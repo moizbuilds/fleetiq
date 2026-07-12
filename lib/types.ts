@@ -18,6 +18,7 @@
  * types already guarantee those shapes came from a column definition.
  */
 import { z } from 'zod';
+import { isValidVin } from './vin';
 
 // ---------------------------------------------------------------------------
 // AI schedule generation (Task 6/7-ish: "AI-recommended" maintenance items)
@@ -102,6 +103,54 @@ export interface VinDecodeResult {
   // originally reported.
   raw: Record<string, string>;
 }
+
+// ---------------------------------------------------------------------------
+// Vehicle creation (Task 4: VIN decode + manual add form) — validated
+// server-side in lib/actions/vehicles.ts's createVehicle server action. The
+// form component (components/VehicleForm.tsx) blocks obviously-bad input
+// client-side too (e.g. a malformed VIN, a year outside the picker's range)
+// purely for a faster feedback loop — this schema is the one place that
+// ACTUALLY enforces the rule, since a client check alone can be bypassed by
+// POSTing to the server action directly.
+//
+// A plain `YYYY-MM-DD` regex (not z.iso.date() / a full calendar-validity
+// check) is enough here: these are user-typed compliance deadlines from a
+// native `<input type="date">`, which only ever emits that exact format or
+// an empty string — there's no untrusted free-text path that could send
+// "2026-13-45" through this schema in practice.
+const compareDateString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.')
+  .nullable();
+
+export const createVehicleInputSchema = z.object({
+  nickname: z.string().trim().min(1, 'Nickname is required.').max(80),
+  vin: z
+    .string()
+    .nullable()
+    .refine((v) => v === null || isValidVin(v), {
+      message: 'VIN must be 17 characters (letters and numbers, excluding I, O, Q).',
+    }),
+  plate: z.string().max(20).nullable(),
+  make: z.string().max(80).nullable(),
+  model: z.string().max(80).nullable(),
+  engine: z.string().max(80).nullable(),
+  // 1950 covers any vehicle old enough to plausibly still be on the road;
+  // 2035 caps out a few model-years ahead of "today" the way dealerships
+  // sell next-year models early — both bounds exist so a typo (e.g. "202" or
+  // "20206") gets rejected instead of silently stored.
+  year: z.number().int().min(1950).max(2035).nullable(),
+  istimaraExpiry: compareDateString,
+  fahesDue: compareDateString,
+  decodeSource: z.enum(['vpic', 'manual', 'mixed']),
+  // 2,000,000 km is a generous real-world ceiling (far beyond any
+  // passenger/light-commercial vehicle's realistic lifetime odometer) —
+  // it exists only to catch a fat-fingered extra digit, not to constrain a
+  // genuine high-mileage fleet vehicle.
+  initialOdometerKm: z.number().int().positive().max(2_000_000).nullable(),
+});
+
+export type CreateVehicleInput = z.infer<typeof createVehicleInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Drizzle-inferred row types, re-exported here so every layer imports types
