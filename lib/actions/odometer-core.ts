@@ -22,7 +22,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { AppTx } from '@/lib/db';
 import { vehicles, odometerReadings } from '@/lib/db/schema';
-import type { LogOdometerInput } from '@/lib/types';
+import type { LogOdometerInput, OdometerReading } from '@/lib/types';
 import { formatKm, formatShortDate } from '@/lib/status';
 
 // Thrown inside a transaction — by this file's logOdometerCore AND, via
@@ -95,10 +95,22 @@ export async function assertVehicleOwnership(
 // transaction with no Clerk session. `input` here is ALREADY validated
 // (shape/bounds) by logOdometerInputSchema — this function only enforces
 // the rules that need a DB read to check at all.
+//
+// WHY `source` is a parameter (defaulting to 'manual') instead of always
+// hard-coding it: Task 9's tracker webhook
+// (app/api/integrations/odometer/route.ts) needs every one of the SAME
+// guards this function already enforces — tenant-scoped vehicle ownership,
+// the below-latest rejection ("tracker glitches must not corrupt" per
+// task-9-brief.md) — but must record the reading with source 'tracker',
+// never 'manual', so the two are distinguishable in a vehicle's history.
+// Reusing this one function for both callers (rather than forking a
+// near-duplicate for the webhook) means the below-latest rule can only ever
+// be implemented once.
 export async function logOdometerCore(
   tx: AppTx,
   tenantId: string,
   input: LogOdometerInput,
+  source: OdometerReading['source'] = 'manual',
 ): Promise<void> {
   await assertVehicleOwnership(tx, tenantId, input.vehicleId);
 
@@ -117,7 +129,7 @@ export async function logOdometerCore(
     vehicleId: input.vehicleId,
     tenantId,
     readingKm: input.readingKm,
-    source: 'manual',
+    source,
     isCorrection: input.isCorrection,
     note: input.note,
   });

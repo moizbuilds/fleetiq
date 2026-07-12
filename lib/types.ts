@@ -323,6 +323,58 @@ export const completeServiceInputSchema = z
 export type CompleteServiceInput = z.infer<typeof completeServiceInputSchema>;
 
 // ---------------------------------------------------------------------------
+// Tracker webhook body (Task 9) — validated in
+// app/api/integrations/odometer/route.ts, the ONE endpoint in FleetIQ a
+// third-party device (a GPS tracker) calls directly instead of a signed-in
+// browser (see proxy.ts's allowlist and lib/api-keys.ts for how that
+// endpoint authenticates a caller with no Clerk session at all).
+//
+// WHY exactly one of vin/vehicleId, enforced by the refine below: a tracker
+// device identifies "which vehicle is this" however its own integration was
+// configured — some send the VIN they read off the OBD-II port, others are
+// paired to a vehicleId at setup time. Accepting both fields but requiring
+// exactly one (not "at least one", not "both must match") means the route
+// never has to reconcile two different identifiers disagreeing about which
+// vehicle a reading belongs to.
+//
+// WHY `recordedAt` is accepted here at all, given the route IGNORES it
+// (app/api/integrations/odometer/route.ts server-stamps every reading
+// instead): rejecting the field outright would break any tracker
+// integration that already sends a timestamp by convention — accepting and
+// silently ignoring it is more compatible than a 400 for a field this
+// schema was never going to use in the first place. See the route's own
+// comment for why device clocks aren't trusted (the same "trust boundary"
+// reasoning globals.md calls out for the deadline-storage rule: a device
+// clock that's wrong, or an attacker who controls the request, could
+// otherwise backdate a reading past the below-latest guard).
+//
+// WHY `recordedAt` is only shape-capped (`.max(40)`), not strictly
+// ISO-datetime-validated: the SAME reasoning as lib/types.ts's own
+// aiInvoiceSchema.serviceDate above — rejecting an otherwise-valid request
+// over the exact formatting of a field this route never reads would be
+// pure friction for an integrator, not a real safety boundary. The length
+// cap alone still rejects pathologically long garbage.
+export const webhookOdometerSchema = z
+  .object({
+    vin: z
+      .string()
+      .trim()
+      .refine((v) => isValidVin(v), {
+        message: 'VIN must be 17 characters (letters and numbers, excluding I, O, Q).',
+      })
+      .optional(),
+    vehicleId: z.string().refine(isValidUuid, { message: 'vehicleId must be a valid id.' }).optional(),
+    readingKm: z.number().int().positive().max(MAX_ODOMETER_KM),
+    recordedAt: z.string().max(40).optional(),
+  })
+  .refine((v) => (v.vin !== undefined) !== (v.vehicleId !== undefined), {
+    message: 'Provide exactly one of vin or vehicleId.',
+    path: ['vin'],
+  });
+
+export type WebhookOdometerInput = z.infer<typeof webhookOdometerSchema>;
+
+// ---------------------------------------------------------------------------
 // Drizzle-inferred row types, re-exported here so every layer imports types
 // from this one file rather than reaching into lib/db/schema.ts directly.
 // ---------------------------------------------------------------------------
