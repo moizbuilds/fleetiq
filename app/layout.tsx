@@ -16,7 +16,9 @@ import type { Metadata, Viewport } from "next";
 import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { NavShell } from "@/components/nav-shell";
+import { SetupNotice } from "@/components/setup-notice";
 import { clerkAppearance } from "@/lib/clerk-appearance";
+import { hasValidClerkPublishableKey } from "@/lib/env";
 import "./globals.css";
 
 // CONCEPT: next/font/google downloads and self-hosts Google Fonts at build
@@ -55,15 +57,28 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const fontClassName = `${archivo.variable} ${plexMono.variable} h-full`;
+
+  // Short-circuit before ClerkProvider mounts at all — ClerkProvider
+  // throws on a malformed publishable key, which would otherwise surface
+  // as an opaque stack trace on every route. See lib/env.ts for why this
+  // same check also has to run in proxy.ts, not just here.
+  if (!hasValidClerkPublishableKey()) {
+    return (
+      <html lang="en" className={fontClassName}>
+        <body className="flex min-h-full flex-col">
+          <SetupNotice />
+        </body>
+      </html>
+    );
+  }
+
   return (
     // CONCEPT: ClerkProvider is a React "context provider" — it makes
     // auth state (who's signed in) available to every component below it
     // without threading a prop through every layer by hand.
     <ClerkProvider appearance={clerkAppearance}>
-      <html
-        lang="en"
-        className={`${archivo.variable} ${plexMono.variable} h-full`}
-      >
+      <html lang="en" className={fontClassName}>
         <body className="flex min-h-full flex-col md:flex-row">
           {/* Skip link: invisible until keyboard-focused, lets keyboard
               users jump past the nav straight to page content instead of

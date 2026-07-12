@@ -38,7 +38,7 @@ export function NavShell() {
   return (
     <nav
       aria-label="Primary"
-      className="flex shrink-0 items-center gap-4 border-b border-seam bg-panel px-4 py-3 md:h-dvh md:w-56 md:flex-col md:items-stretch md:gap-8 md:border-b-0 md:border-r md:px-5 md:py-6"
+      className="flex shrink-0 items-center gap-4 border-b border-seam bg-panel px-4 py-3 md:sticky md:top-0 md:h-dvh md:w-56 md:flex-col md:items-stretch md:gap-8 md:border-b-0 md:border-r md:px-5 md:py-6"
     >
       <span className="nameplate eyebrow shrink-0">FLEETIQ</span>
 

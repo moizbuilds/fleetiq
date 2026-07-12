@@ -13,11 +13,20 @@
  */
 import { defineConfig } from "drizzle-kit";
 
+// WHY throw here instead of `process.env.DATABASE_URL!`: the `!` just
+// tells TypeScript to trust it's defined — it does nothing at runtime, so
+// a missing var would surface later as a cryptic connection-refused error
+// deep inside drizzle-kit instead of a clear message pointing at the fix.
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error("DATABASE_URL is required — set it in .env.local");
+}
+
 export default defineConfig({
   schema: "./lib/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    url: databaseUrl,
   },
 });
