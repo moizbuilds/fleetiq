@@ -116,3 +116,12 @@ export type {
   TenantApiKey,
   AiUsage,
 } from './db/schema';
+
+// ---------------------------------------------------------------------------
+// Due-status engine (Task 3): the shared status shape every vehicle/schedule
+// row is turned into at render time. Re-exported here (rather than having
+// UI components import from lib/status directly) so the "shared contract in
+// one file" rule holds even though the computation itself lives in its own
+// module — see lib/status.ts for the functions that produce this shape.
+// ---------------------------------------------------------------------------
+export type { ItemStatus, ItemState, DueThresholds, IntervalThresholds } from './status';
