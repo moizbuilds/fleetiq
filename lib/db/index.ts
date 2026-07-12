@@ -26,8 +26,26 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 let cached: Db | null = null;
 
+// WHY three checks instead of just the `user:password@host` substring: that
+// substring only catches the exact placeholder .env.example ships with. A
+// value like `postgresql://user:password@host/db?sslmode=placeholder` would
+// slip past a narrower check, and so would any string that isn't even a
+// valid URL (a copy-paste mistake that dropped the scheme, for instance) —
+// `neon()` would then fail deep inside the driver with a confusing error
+// instead of this file's clear one. Checking for the literal word
+// "placeholder" anywhere catches variations on the example value; the
+// `new URL()` parse catches anything that isn't a real connection string at
+// all.
 function isPlaceholder(url: string): boolean {
-  return url.includes('user:password@host');
+  if (url.includes('user:password@host')) return true;
+  if (url.includes('placeholder')) return true;
+
+  try {
+    new URL(url);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 export function getDb(): Db {

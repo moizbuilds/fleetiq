@@ -14,9 +14,10 @@
  */
 import type { Metadata, Viewport } from "next";
 import { Archivo, IBM_Plex_Mono } from "next/font/google";
-import { ClerkProvider } from "@clerk/nextjs";
+import { ClerkProvider, Show } from "@clerk/nextjs";
 import { NavShell } from "@/components/nav-shell";
 import { SetupNotice } from "@/components/setup-notice";
+import { SyncActiveOrg } from "@/components/sync-active-org";
 import { clerkAppearance } from "@/lib/clerk-appearance";
 import { hasValidClerkPublishableKey } from "@/lib/env";
 import "./globals.css";
@@ -80,6 +81,14 @@ export default function RootLayout({
     <ClerkProvider appearance={clerkAppearance}>
       <html lang="en" className={fontClassName}>
         <body className="flex min-h-full flex-col md:flex-row">
+          {/* Client-side org-activation bridge — see
+              components/sync-active-org.tsx for why this can't be done on
+              the server. Scoped to `Show when="signed-in"` (Clerk v7's
+              replacement for the old <SignedIn> component) since there's
+              no organization to activate before a user is signed in. */}
+          <Show when="signed-in">
+            <SyncActiveOrg />
+          </Show>
           {/* Skip link: invisible until keyboard-focused, lets keyboard
               users jump past the nav straight to page content instead of
               tabbing through every nav link on every page load. */}

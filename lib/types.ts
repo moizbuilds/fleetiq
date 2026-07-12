@@ -28,11 +28,18 @@ import { z } from 'zod';
 // rotation) and calendar-based ones (coolant every 24 months regardless of
 // mileage) — but an item with NEITHER is meaningless (it could never become
 // due), so that combination is rejected here rather than silently stored.
+//
+// WHY `.positive()` on top of that: 0 or a negative interval is just as
+// meaningless as no interval at all — "due every 0km" or "every -6 months"
+// can't describe a real maintenance schedule, and would either divide by
+// zero or always-be-overdue wherever this feeds a due-date calculation.
+// Rejecting it here means a malformed AI response never reaches the DB in
+// the first place.
 const aiScheduleItemSchema = z
   .object({
     name: z.string(),
-    intervalKm: z.number().nullable(),
-    intervalMonths: z.number().nullable(),
+    intervalKm: z.number().int().positive().nullable(),
+    intervalMonths: z.number().int().positive().nullable(),
     brandRecommendations: z.array(z.string()),
     rationale: z.string(),
   })
@@ -51,17 +58,24 @@ export type AiScheduleItem = z.infer<typeof aiScheduleItemSchema>;
 // AI invoice/receipt extraction (photo of a garage invoice -> prefilled form)
 // ---------------------------------------------------------------------------
 
+// WHY `.nonnegative()` on the cost fields but `.positive()` on odometerKm
+// below: a cost of exactly 0 QAR is a real thing (a warranty repair, a
+// goodwill freebie), so 0 has to stay valid — only a negative cost is
+// nonsense. An odometer reading of exactly 0km, on the other hand, would
+// mean a brand-new-from-factory car at THIS service event, which never
+// happens for a garage invoice; the same z.number().nullable() laxness that
+// let 0/negative intervals slip through above applied here too.
 const aiInvoiceLineItemSchema = z.object({
   description: z.string(),
   partOrService: z.enum(['part', 'service', 'other']),
-  costQar: z.number().nullable(),
+  costQar: z.number().nonnegative().nullable(),
 });
 
 export const aiInvoiceSchema = z.object({
   garageName: z.string().nullable(),
   serviceDate: z.string().nullable(),
-  odometerKm: z.number().nullable(),
-  totalCostQar: z.number().nullable(),
+  odometerKm: z.number().positive().nullable(),
+  totalCostQar: z.number().nonnegative().nullable(),
   lineItems: z.array(aiInvoiceLineItemSchema),
   // Model's own notes on what it wasn't sure about — surfaced in the UI so
   // the user knows which pre-filled fields to double check before saving.
