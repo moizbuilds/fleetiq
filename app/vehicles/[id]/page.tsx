@@ -23,7 +23,7 @@ import { notFound } from 'next/navigation';
 import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getVehicleDetail } from '@/lib/queries';
-import { isValidUuid } from '@/lib/types';
+import { AI_BRAND_DISCLAIMER, isValidUuid } from '@/lib/types';
 import { formatKm } from '@/lib/status';
 import { GenerateSchedule } from '@/components/GenerateSchedule';
 import { OdometerReadout } from '@/components/OdometerReadout';
@@ -61,6 +61,13 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
 
   const { vehicle } = detail;
   const specLine = [vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' ');
+  // globals.md requires the brand-suggestion disclaimer wherever AI brand
+  // recommendations are shown (final review, item 1) — but only when a row
+  // actually HAS one; a schedule with no AI brand picks at all has nothing
+  // for the caveat to apply to.
+  const hasBrandRecommendations = detail.scheduleItems.some(
+    ({ item }) => item.brandRecommendations.length > 0,
+  );
 
   return (
     <div className="space-y-8">
@@ -176,6 +183,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                 ))}
               </tbody>
             </table>
+            {/* Once per table, not per row (final review, item 1) — a small
+                muted caption under the Brands column rather than repeating
+                it on every AI-sourced row, which would just be the same
+                sentence read N times. text-steel (not amber — amber is
+                reserved for due-soon status per globals.md), same "small
+                muted caption" treatment as the cost-per-km caption below. */}
+            {hasBrandRecommendations && (
+              <p className="border-t border-seam px-3 py-2 text-xs text-steel">{AI_BRAND_DISCLAIMER}</p>
+            )}
           </div>
         )}
       </div>

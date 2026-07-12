@@ -20,13 +20,14 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { vehicles, scheduleItems, odometerReadings } from '@/lib/db/schema';
+import { vehicles, scheduleItems } from '@/lib/db/schema';
 import { aiScheduleSchema, updateScheduleItemInputSchema, type AiScheduleItem } from '@/lib/types';
 import { addMonthsUtc } from '@/lib/status';
 import { updateScheduleItemCore, ScheduleItemValidationError } from './schedule-core';
+import { getLatestReading } from './odometer-core';
 
 export interface AcceptScheduleState {
   error?: string;
@@ -73,41 +74,7 @@ export async function acceptSchedule(
   // globals.md warns about. `parsedItems.data[i].name` below is already
   // trimmed by the schema's own `.trim()` transform.
 
-  // The vehicle's most recent odometer reading (there may be none yet, e.g.
-  // a vehicle added with no initial reading) — every km-based threshold
-  // below is seeded from this single reading, never re-derived per item.
-  const [latestReading] = await db
-    .select({ readingKm: odometerReadings.readingKm })
-    .from(odometerReadings)
-    .where(eq(odometerReadings.vehicleId, vehicleId))
-    .orderBy(desc(odometerReadings.recordedAt))
-    .limit(1);
-  const currentKm = latestReading?.readingKm ?? null;
-
   const today = new Date();
-  const rows = parsedItems.data.map((item) => ({
-    vehicleId,
-    tenantId,
-    // Already trimmed by aiScheduleItemSchema's `.trim()` transform above —
-    // not re-trimmed here, so there's exactly one place that decides what
-    // counts as this row's name.
-    name: item.name,
-    intervalKm: item.intervalKm,
-    intervalMonths: item.intervalMonths,
-    // THRESHOLDS, not countdowns (globals.md) — computed once here, at
-    // acceptance time, and never recomputed until the item is actually
-    // serviced (a later task's concern).
-    //
-    // Bounded, not overflow-prone: intervalKm is capped at 100,000 by
-    // aiScheduleItemSchema and currentKm is capped at 2,000,000 by
-    // createVehicleInputSchema's initialOdometerKm bound (odometer readings
-    // only ever grow from that seed) — so this sum tops out around 2.1M,
-    // nowhere near a number precision or `integer` column concern.
-    nextDueKm: item.intervalKm !== null && currentKm !== null ? currentKm + item.intervalKm : null,
-    nextDueDate: item.intervalMonths !== null ? addMonthsUtc(today, item.intervalMonths) : null,
-    brandRecommendations: item.brandRecommendations,
-    source: 'ai' as const,
-  }));
 
   // A single multi-row insert inside `db.transaction()` — Task 6 migrated
   // lib/db/index.ts from the neon-http driver (whose only atomicity
@@ -120,6 +87,44 @@ export async function acceptSchedule(
   // same way everywhere (see lib/actions/services.ts's completeService for
   // a case that genuinely needs multiple statements in one transaction).
   await db.transaction(async (tx) => {
+    // The vehicle's most recent odometer reading (there may be none yet,
+    // e.g. a vehicle added with no initial reading) — every km-based
+    // threshold below is seeded from this single reading, never re-derived
+    // per item. Reuses odometer-core.ts's getLatestReading (final review,
+    // item 2) instead of a second copy of this query: that helper already
+    // tiebreaks by `readingKm DESC` when two readings share a
+    // `recordedAt` instant, which this query used to omit — the one
+    // `orderBy(desc(recordedAt))` this file had was the ONE write path
+    // among the three (logOdometerCore, completeServiceCore, this one)
+    // that could disagree with the other two about which reading counts as
+    // "latest".
+    const latestReading = await getLatestReading(tx, vehicleId);
+    const currentKm = latestReading?.readingKm ?? null;
+
+    const rows = parsedItems.data.map((item) => ({
+      vehicleId,
+      tenantId,
+      // Already trimmed by aiScheduleItemSchema's `.trim()` transform above —
+      // not re-trimmed here, so there's exactly one place that decides what
+      // counts as this row's name.
+      name: item.name,
+      intervalKm: item.intervalKm,
+      intervalMonths: item.intervalMonths,
+      // THRESHOLDS, not countdowns (globals.md) — computed once here, at
+      // acceptance time, and never recomputed until the item is actually
+      // serviced (a later task's concern).
+      //
+      // Bounded, not overflow-prone: intervalKm is capped at 100,000 by
+      // aiScheduleItemSchema and currentKm is capped at 2,000,000 by
+      // createVehicleInputSchema's initialOdometerKm bound (odometer readings
+      // only ever grow from that seed) — so this sum tops out around 2.1M,
+      // nowhere near a number precision or `integer` column concern.
+      nextDueKm: item.intervalKm !== null && currentKm !== null ? currentKm + item.intervalKm : null,
+      nextDueDate: item.intervalMonths !== null ? addMonthsUtc(today, item.intervalMonths) : null,
+      brandRecommendations: item.brandRecommendations,
+      source: 'ai' as const,
+    }));
+
     await tx.insert(scheduleItems).values(rows);
   });
 

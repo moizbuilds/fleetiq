@@ -86,7 +86,24 @@ export type AiScheduleItem = z.infer<typeof aiScheduleItemSchema>;
 // one-source-of-truth drift globals.md warns about — a future wording tweak
 // applied to one copy and forgotten on the other would leave one of the two
 // surfaces silently out of compliance with the required phrasing.
-export const AI_SCHEDULE_DISCLAIMER = "AI-recommended — verify against your owner's manual.";
+//
+// NOTE (final review, item 3): globals.md's wording has no terminal
+// period — this used to carry one, a discrepancy from the binding copy that
+// only surfaces if some future check ever diffs the two strings verbatim.
+// It's a label (rendered standalone or as a tooltip title), not a sentence
+// in running prose, so dropping the period doesn't read as broken anywhere
+// it's used.
+export const AI_SCHEDULE_DISCLAIMER = "AI-recommended — verify against your owner's manual";
+
+// Same reasoning as AI_SCHEDULE_DISCLAIMER above, for globals.md's OTHER
+// required exact string — the brand-suggestion caveat. WHY this needed
+// promoting to a shared constant (final review, item 1): it previously
+// existed only as a hand-typed string inside components/ScheduleReview.tsx's
+// review-table banner, so the vehicle detail page's own schedule table
+// (components/ScheduleItemRow.tsx / app/vehicles/[id]/page.tsx) had no way
+// to show it at all — the exact compliance-mandated wording was reachable
+// from only ONE of the two surfaces that display AI brand recommendations.
+export const AI_BRAND_DISCLAIMER = 'AI suggestions — verify local availability';
 
 // ---------------------------------------------------------------------------
 // AI invoice/receipt extraction (photo of a garage invoice -> prefilled form)
@@ -133,6 +150,21 @@ export const aiInvoiceSchema = z.object({
 
 export type AiInvoice = z.infer<typeof aiInvoiceSchema>;
 export type AiInvoiceLineItem = z.infer<typeof aiInvoiceLineItemSchema>;
+
+// The JSON body app/api/ai/invoice/route.ts's POST handler returns, and the
+// exact shape components/InvoiceScan.tsx expects back from that fetch() call
+// (final review, item 4). WHY this needs to be a shared type instead of each
+// side declaring its own: the route previously built this object inline
+// (`NextResponse.json({ extraction, photoUrl })`, untyped) while InvoiceScan
+// redeclared the identical `{ extraction, photoUrl }` shape as a local
+// interface purely to cast the parsed response body — an API ↔ UI boundary
+// contract typed independently on both ends is exactly the drift globals.md
+// warns about: a future field added to one side (or a typo in one of the two
+// copies) wouldn't be caught by the type checker at all.
+export interface InvoiceExtractionResponse {
+  extraction: AiInvoice;
+  photoUrl: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // vPIC VIN decode result (NHTSA's free VIN-decode API — not an LLM call, so

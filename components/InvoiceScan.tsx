@@ -19,12 +19,7 @@
 
 import { useRef, useState } from 'react';
 import { ALLOWED_PHOTO_TYPES, MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
-import type { AiInvoice } from '@/lib/types';
-
-interface InvoiceScanResponse {
-  extraction: AiInvoice;
-  photoUrl: string | null;
-}
+import type { AiInvoice, InvoiceExtractionResponse } from '@/lib/types';
 
 // CONCEPT: a small state machine (rather than separate loading/error
 // booleans) so "scanning" and "error" can never be simultaneously true —
@@ -93,7 +88,7 @@ export function InvoiceScan({ hasPhotoStorage, onExtracted }: InvoiceScanProps) 
         return;
       }
 
-      const { extraction, photoUrl } = body as InvoiceScanResponse;
+      const { extraction, photoUrl } = body as InvoiceExtractionResponse;
       onExtracted(extraction, photoUrl);
       setState({ status: 'idle' });
       setFile(null);

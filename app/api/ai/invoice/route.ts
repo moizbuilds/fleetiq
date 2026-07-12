@@ -31,6 +31,7 @@ import { getAnthropic } from '@/lib/ai/client';
 import { extractInvoice, type InvoiceImage } from '@/lib/ai/invoice';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 import { MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
+import type { InvoiceExtractionResponse } from '@/lib/types';
 
 const BAD_PHOTO_MESSAGE = 'Upload a JPEG, PNG or WebP photo.';
 const EXTRACTION_FAILED_MESSAGE = "Couldn't read this invoice — fill the form manually.";
@@ -132,5 +133,11 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ extraction, photoUrl });
+  // Annotated against the shared lib/types.ts contract (final review, item
+  // 4) instead of an inline object literal — components/InvoiceScan.tsx casts
+  // its fetch() response to this exact same type, so a field renamed or
+  // dropped on either side now fails `tsc`, instead of only surfacing as a
+  // silent `undefined` in the browser.
+  const responseBody: InvoiceExtractionResponse = { extraction, photoUrl };
+  return NextResponse.json(responseBody);
 }

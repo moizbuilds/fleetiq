@@ -18,7 +18,7 @@
 
 import { useState, useTransition } from 'react';
 import { acceptSchedule } from '@/lib/actions/schedule';
-import { AI_SCHEDULE_DISCLAIMER, type AiScheduleItem } from '@/lib/types';
+import { AI_BRAND_DISCLAIMER, AI_SCHEDULE_DISCLAIMER, type AiScheduleItem } from '@/lib/types';
 
 const FIELD_INPUT_CLASS =
   'w-full border border-seam bg-panel-2 px-2 py-1.5 text-sm text-bone placeholder:text-steel-dim focus-visible:outline-none';
@@ -117,9 +117,7 @@ export function ScheduleReview({ vehicleId, items }: { vehicleId: string; items:
       <div className="border border-seam bg-panel-2 p-4">
         <p className="eyebrow">AI Schedule</p>
         <p className="mt-2 text-sm text-bone">{AI_SCHEDULE_DISCLAIMER}</p>
-        <p className="mt-1 text-sm text-steel">
-          Brand suggestions are AI suggestions — verify local availability.
-        </p>
+        <p className="mt-1 text-sm text-steel">{AI_BRAND_DISCLAIMER}</p>
       </div>
 
       <div className="overflow-x-auto border border-seam bg-panel">
