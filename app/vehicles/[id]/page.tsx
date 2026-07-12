@@ -2,10 +2,12 @@
  * Vehicle detail page ("/vehicles/[id]") — full instrument-panel build
  * (Task 8): header (photo, plate, VIN, decode badge, odometer), compliance
  * section with inline-editable Istimara/Fahes dates, the AI/user
- * maintenance schedule table (StatusPill + IntervalGauge per row), service
- * history timeline, and per-year cost totals + cost-per-km. Tasks 4-7's
- * generate/accept schedule flow and "Mark done" wiring are kept exactly as
- * they were — this task only restyles/extends the page around them.
+ * maintenance schedule table (components/ScheduleItemRow.tsx: StatusPill +
+ * IntervalGauge per row, plus an inline interval-edit toggle added in fix
+ * round 1, item 4), service history timeline, and per-year cost totals +
+ * cost-per-km. Tasks 4-7's generate/accept schedule flow and "Mark done"
+ * wiring are kept exactly as they were — this task only restyles/extends
+ * the page around them.
  *
  * WHY the `id` param is checked against a UUID shape before ever touching
  * the database: `id` comes straight from the URL, which means it's
@@ -26,12 +28,9 @@ import { formatKm } from '@/lib/status';
 import { GenerateSchedule } from '@/components/GenerateSchedule';
 import { OdometerReadout } from '@/components/OdometerReadout';
 import { PlateChip } from '@/components/PlateChip';
-import { StatusPill } from '@/components/StatusPill';
-import { IntervalGauge } from '@/components/IntervalGauge';
 import { ComplianceSection } from '@/components/ComplianceSection';
+import { ScheduleItemRow } from '@/components/ScheduleItemRow';
 import { HistoryTimeline } from '@/components/HistoryTimeline';
-
-const AI_SOURCE_TOOLTIP = "AI-recommended — verify against your owner's manual.";
 
 const DECODE_SOURCE_LABEL: Record<'vpic' | 'manual' | 'mixed', string> = {
   vpic: 'VIN decoded',
@@ -166,58 +165,15 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                 </tr>
               </thead>
               <tbody>
-                {detail.scheduleItems.map(({ item, status, intervalConsumedPct }) => {
-                  const interval = [
-                    item.intervalKm !== null ? formatKm(item.intervalKm) : null,
-                    item.intervalMonths !== null ? `${item.intervalMonths} mo` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' / ');
-
-                  const nextDue = [item.nextDueKm !== null ? formatKm(item.nextDueKm) : null, item.nextDueDate]
-                    .filter(Boolean)
-                    .join(' / ');
-
-                  return (
-                    <tr key={item.id} className="border-b border-seam last:border-b-0">
-                      <td className="px-3 py-2 text-bone">{item.name}</td>
-                      <td className="px-3 py-2">
-                        <StatusPill state={status.state} />
-                      </td>
-                      <td className="mono-figures px-3 py-2 text-steel">{interval || '—'}</td>
-                      <td className="px-3 py-2">
-                        <div className="mono-figures text-steel">{nextDue || '—'}</div>
-                        <div className="mono-figures text-xs text-steel-dim">{status.label}</div>
-                        <div className="mt-1.5 w-32">
-                          <IntervalGauge pct={intervalConsumedPct} />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-steel">
-                        {item.brandRecommendations.length > 0 ? item.brandRecommendations.join(', ') : '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        <span
-                          className="border border-seam px-2 py-0.5 text-xs uppercase text-steel"
-                          title={item.source === 'ai' ? AI_SOURCE_TOOLTIP : undefined}
-                        >
-                          {item.source}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {/* `?item=` preselects this row's schedule item on
-                            the log-service form (that page validates it's
-                            actually THIS vehicle's item before trusting it —
-                            the query string is attacker-controlled). */}
-                        <Link
-                          href={`/vehicles/${vehicle.id}/log-service?item=${item.id}`}
-                          className="text-xs text-steel underline decoration-seam underline-offset-4 transition-colors hover:text-bone"
-                        >
-                          Mark done
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {detail.scheduleItems.map(({ item, status, intervalConsumedPct }) => (
+                  <ScheduleItemRow
+                    key={item.id}
+                    vehicleId={vehicle.id}
+                    item={item}
+                    status={status}
+                    intervalConsumedPct={intervalConsumedPct}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

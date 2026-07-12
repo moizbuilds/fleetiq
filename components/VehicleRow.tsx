@@ -37,10 +37,18 @@ const WORST_TEXT_COLOR: Record<ItemState, string> = {
 };
 
 export function VehicleRow({ vehicle, index }: { vehicle: FleetVehicleStatus; index: number }) {
-  // The lamp strip only shows items that AREN'T fully ok — an all-ok
-  // vehicle's row has no lamps at all, the same "quiet unless something
-  // needs attention" instrument-panel philosophy as the lamps themselves.
-  const attentionItems = vehicle.items.filter((item) => item.status.state !== 'ok');
+  // The lamp strip only shows items that are actually overdue or due soon —
+  // an all-ok vehicle's row has no lamps at all, the same "quiet unless
+  // something needs attention" instrument-panel philosophy as the lamps
+  // themselves. `no_data` items (fix round 1, ruling #1) are deliberately
+  // excluded too, not just `ok`: a lamp has no way to render "nothing to
+  // compare yet" without either lighting up (implying urgency it doesn't
+  // have) or looking identical to unlit-and-fine — the OdometerReadout's own
+  // "no reading yet" state already communicates that, so a no_data item
+  // contributes nothing here except a lamp that LOOKS like a fault.
+  const attentionItems = vehicle.items.filter(
+    (item) => item.status.state === 'overdue' || item.status.state === 'due_soon',
+  );
   const shownLamps = attentionItems.slice(0, MAX_LAMPS);
   const overflowCount = attentionItems.length - shownLamps.length;
 

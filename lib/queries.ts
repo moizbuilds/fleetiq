@@ -15,7 +15,7 @@
  * pick an exact "now" and assert an exact overdue/due_soon/ok boundary
  * instead of depending on when the test happens to run.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { NeonDatabase } from 'drizzle-orm/neon-serverless';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import * as schema from './db/schema';
@@ -90,7 +90,24 @@ function rankScheduleItems(items: ScheduleItem[], currentKm: number | null, toda
 const NOTHING_TRACKED: ItemStatus = { state: 'no_data', dueInKm: null, dueInDays: null, label: 'nothing tracked yet' };
 
 export async function getFleetStatus(db: QueryDb, tenantId: string, today: Date): Promise<FleetVehicleStatus[]> {
-  const vehicleRows = await db.select().from(vehicles).where(eq(vehicles.tenantId, tenantId));
+  // ORDER BY created_at ASC, id ASC (fix round 1, ruling #2): without an
+  // explicit order, Postgres is free to return these rows in whatever
+  // physical order it finds convenient (which can change between reloads,
+  // e.g. after a VACUUM or an index-only scan) — invisible on a fleet whose
+  // vehicles all have DIFFERENT worst-first ranks, but the moment two
+  // vehicles land in an exact tie (worstFirst's remainingDistance is only a
+  // TIE-BREAK, not a total order — see `NOTHING_TRACKED`/no_data below for
+  // the common real case), Array.prototype.sort's stability means whichever
+  // order THIS select happened to return decides the final display order.
+  // `created_at` (oldest first) makes that order deterministic and
+  // meaningful (the vehicle added first stays first); `id` is a pure
+  // tie-break for the vanishingly unlikely case of two rows sharing the
+  // exact same microsecond-precision timestamp.
+  const vehicleRows = await db
+    .select()
+    .from(vehicles)
+    .where(eq(vehicles.tenantId, tenantId))
+    .orderBy(asc(vehicles.createdAt), asc(vehicles.id));
   if (vehicleRows.length === 0) return [];
 
   // CONCEPT: DISTINCT ON (vehicle_id) keeps only the FIRST row Postgres
@@ -110,7 +127,15 @@ export async function getFleetStatus(db: QueryDb, tenantId: string, today: Date)
   `);
   const latestByVehicle = new Map(latestReadingRows.rows.map((r) => [r.vehicle_id, r.reading_km]));
 
-  const itemRows = await db.select().from(scheduleItems).where(eq(scheduleItems.tenantId, tenantId));
+  // Same deterministic-order reasoning as vehicleRows above — rankScheduleItems
+  // feeds these straight into worstFirst, whose sort is stable, so an
+  // unordered select here would make a tie between two schedule items'
+  // ranks just as reload-dependent as the vehicle-level tie above.
+  const itemRows = await db
+    .select()
+    .from(scheduleItems)
+    .where(eq(scheduleItems.tenantId, tenantId))
+    .orderBy(asc(scheduleItems.createdAt), asc(scheduleItems.id));
   const itemsByVehicle = new Map<string, ScheduleItem[]>();
   for (const item of itemRows) {
     const list = itemsByVehicle.get(item.vehicleId) ?? [];
@@ -202,10 +227,12 @@ export async function getVehicleDetail(
   // no reason (same reasoning as the original app/vehicles/[id]/page.tsx's
   // Promise.all, extended to the new queries this task adds).
   const [itemRows, [latestReading], historyRows, yearRows, spanRow] = await Promise.all([
+    // Same deterministic-order reasoning as getFleetStatus's itemRows above.
     db
       .select()
       .from(scheduleItems)
-      .where(and(eq(scheduleItems.vehicleId, vehicleId), eq(scheduleItems.tenantId, tenantId))),
+      .where(and(eq(scheduleItems.vehicleId, vehicleId), eq(scheduleItems.tenantId, tenantId)))
+      .orderBy(asc(scheduleItems.createdAt), asc(scheduleItems.id)),
     db
       .select({ readingKm: odometerReadings.readingKm })
       .from(odometerReadings)

@@ -10,6 +10,7 @@ import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getFleetStatus } from '@/lib/queries';
 import { VehicleRow } from '@/components/VehicleRow';
+import { EmptyFleetVin } from '@/components/EmptyFleetVin';
 
 export default async function Home() {
   const { tenantId } = await requireTenant();
@@ -27,6 +28,11 @@ export default async function Home() {
         >
           Add vehicle
         </Link>
+        {/* brief line 6 / fix round 1 ruling #3: a VIN input right here,
+            not just a link to a blank form — decoding pre-fills the details
+            form on the very next screen instead of making a first-time user
+            find the VIN field themselves after clicking through. */}
+        <EmptyFleetVin />
       </div>
     );
   }

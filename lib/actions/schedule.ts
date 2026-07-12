@@ -24,8 +24,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { vehicles, scheduleItems, odometerReadings } from '@/lib/db/schema';
-import { aiScheduleSchema, type AiScheduleItem } from '@/lib/types';
+import { aiScheduleSchema, updateScheduleItemInputSchema, type AiScheduleItem } from '@/lib/types';
 import { addMonthsUtc } from '@/lib/status';
+import { updateScheduleItemCore, ScheduleItemValidationError } from './schedule-core';
 
 export interface AcceptScheduleState {
   error?: string;
@@ -137,4 +138,51 @@ export async function acceptSchedule(
   // long as the caller doesn't wrap the call in a try/catch that would
   // swallow the thrown redirect signal.
   redirect(`/vehicles/${vehicleId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Interval edit (fix round 1, item 4 — deferred from Task 8) — components/
+// ScheduleItemRow.tsx's inline "Edit" toggle on the vehicle detail page's
+// schedule table. Unlike acceptSchedule above, this never navigates: the
+// row stays in place and re-renders with the new interval/threshold/source,
+// same "stays in place, revalidatePath only" shape as
+// lib/actions/vehicles.ts's updateComplianceDates.
+// ---------------------------------------------------------------------------
+export interface UpdateScheduleItemState {
+  error?: string;
+}
+
+export async function updateScheduleItem(rawInput: {
+  scheduleItemId: string;
+  intervalKm: number | null;
+  intervalMonths: number | null;
+}): Promise<UpdateScheduleItemState> {
+  // Reachable directly (Server Actions compile to a real POST endpoint), so
+  // it re-validates its own input exactly like a public API route would
+  // (globals.md) before ever touching the database.
+  const parsed = updateScheduleItemInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Some fields need fixing.' };
+  }
+
+  const { tenantId } = await requireTenant();
+  const db = getDb();
+
+  let vehicleId: string;
+  try {
+    vehicleId = await db.transaction((tx) => updateScheduleItemCore(tx, tenantId, parsed.data, new Date()));
+  } catch (err) {
+    // ScheduleItemValidationError is the one EXPECTED failure mode here (a
+    // stale/foreign scheduleItemId) — safe to show the user as a friendly
+    // `{ error }` response. Anything else (a real DB/network failure)
+    // rethrows instead of being fabricated into a fake success or a
+    // misleadingly-generic message (globals.md: never fabricate a result).
+    if (err instanceof ScheduleItemValidationError) {
+      return { error: err.message };
+    }
+    throw err;
+  }
+
+  revalidatePath(`/vehicles/${vehicleId}`);
+  return {};
 }

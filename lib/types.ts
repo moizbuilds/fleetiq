@@ -248,6 +248,30 @@ export const updateComplianceDatesInputSchema = z.object({
 export type UpdateComplianceDatesInput = z.infer<typeof updateComplianceDatesInputSchema>;
 
 // ---------------------------------------------------------------------------
+// Schedule item interval edit (fix round 1, item 4 — deferred from Task 8)
+// — validated server-side in lib/actions/schedule.ts's updateScheduleItem
+// server action, reached from the vehicle detail page's inline "Edit"
+// toggle on each schedule row (components/ScheduleItemRow.tsx). Same
+// km/months bounds as aiScheduleItemSchema above (100,000km / 120 months,
+// each `.positive()` for the same "0 or negative isn't a real interval"
+// reasoning) — a user hand-editing an interval is exactly as unable to
+// describe a real maintenance schedule with "every 0km" as an AI response
+// is, so the same ceiling applies to a human-typed value.
+// ---------------------------------------------------------------------------
+export const updateScheduleItemInputSchema = z
+  .object({
+    scheduleItemId: z.string().refine(isValidUuid, { message: 'Schedule item not found.' }),
+    intervalKm: z.number().int().positive().max(100_000).nullable(),
+    intervalMonths: z.number().int().positive().max(120).nullable(),
+  })
+  .refine((v) => v.intervalKm !== null || v.intervalMonths !== null, {
+    message: 'Set at least one of interval km or interval months.',
+    path: ['intervalKm'],
+  });
+
+export type UpdateScheduleItemInput = z.infer<typeof updateScheduleItemInputSchema>;
+
+// ---------------------------------------------------------------------------
 // Odometer log (Task 6) — validated server-side in lib/actions/odometer.ts's
 // logOdometer server action, before it ever opens a db.transaction(). This
 // schema only enforces SHAPE/bounds (a malformed vehicleId, a NaN/negative/

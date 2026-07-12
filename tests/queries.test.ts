@@ -207,6 +207,45 @@ describe('getFleetStatus', () => {
     const overdue = fleet.find((v) => v.nickname === 'Overdue Truck')!;
     expect(overdue.latestReadingKm).toBe(25_000); // not 10,000, the older reading
   });
+
+  // Fix round 1, ruling #2: two vehicles that tie EXACTLY on worst status
+  // (both "nothing tracked yet") must still sort in a deterministic order —
+  // the created_at ASC, id ASC ORDER BY on the vehicles select, not whatever
+  // order Postgres happens to return rows in. Explicit createdAt timestamps
+  // (rather than relying on two back-to-back defaultNow() inserts, which
+  // could tie at the same microsecond in an in-memory PGlite run) make this
+  // assertion exact instead of flaky.
+  it('keeps two nothing-tracked vehicles in insertion (created_at) order across the worst-first sort', async () => {
+    const TENANT_ORDER = 'org_queries_test_order';
+    const [older] = await db
+      .insert(schema.vehicles)
+      .values({
+        tenantId: TENANT_ORDER,
+        nickname: 'Older Nothing-Tracked Van',
+        decodeSource: 'manual',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      })
+      .returning();
+    const [newer] = await db
+      .insert(schema.vehicles)
+      .values({
+        tenantId: TENANT_ORDER,
+        nickname: 'Newer Nothing-Tracked Van',
+        decodeSource: 'manual',
+        createdAt: new Date('2026-02-01T00:00:00.000Z'),
+      })
+      .returning();
+
+    const fleet = await getFleetStatus(db, TENANT_ORDER, TODAY);
+    expect(fleet).toHaveLength(2);
+    // Both fold into the same NOTHING_TRACKED no_data status (no schedule
+    // items, no compliance dates set) — an exact tie with nothing else to
+    // break it except the query's own ORDER BY.
+    expect(fleet[0].worst.state).toBe('no_data');
+    expect(fleet[1].worst.state).toBe('no_data');
+    expect(fleet[0].id).toBe(older.id);
+    expect(fleet[1].id).toBe(newer.id);
+  });
 });
 
 describe('getVehicleDetail', () => {
@@ -254,5 +293,52 @@ describe('getVehicleDetail', () => {
     expect(detail).not.toBeNull();
     expect(detail!.costs.costPerKm).toBeNull();
     expect(detail!.costs.totalsByYear).toEqual([]); // no costed services at all yet
+  });
+
+  // MINOR (fix round 1, item 5): 2+ readings satisfies the "reading_count >= 2"
+  // half of costPerKm's null-safety guard, but a ZERO-km span (both readings
+  // logged at the same odometer value, e.g. two manual entries the same day)
+  // would still divide by zero without the separate `distanceKm > 0` check —
+  // this test exercises that second half specifically, distinct from the
+  // single-reading case covered above.
+  it('returns a null costPerKm when the reading span is zero (2+ readings, same km)', async () => {
+    const [zeroSpanVan] = await db
+      .insert(schema.vehicles)
+      .values({ tenantId: TENANT_A, nickname: 'Zero Span Van', decodeSource: 'manual' })
+      .returning();
+
+    await db.insert(schema.odometerReadings).values([
+      {
+        vehicleId: zeroSpanVan.id,
+        tenantId: TENANT_A,
+        readingKm: 10_000,
+        source: 'manual',
+        recordedAt: new Date('2026-06-01T09:00:00.000Z'),
+      },
+      {
+        vehicleId: zeroSpanVan.id,
+        tenantId: TENANT_A,
+        readingKm: 10_000, // same km as the first reading — zero span
+        source: 'manual',
+        recordedAt: new Date('2026-06-15T09:00:00.000Z'),
+      },
+    ]);
+    await db.insert(schema.serviceEvents).values({
+      vehicleId: zeroSpanVan.id,
+      tenantId: TENANT_A,
+      scheduleItemId: null,
+      title: 'Battery replacement',
+      odometerKm: 10_000,
+      performedOn: '2026-06-01',
+      costQar: '100.00',
+    });
+
+    const detail = await getVehicleDetail(db, TENANT_A, zeroSpanVan.id, TODAY);
+    expect(detail).not.toBeNull();
+    expect(detail!.costs.distanceKm).toBe(0);
+    expect(detail!.costs.costPerKm).toBeNull();
+    // The cost total itself is still real and shown — only the derived
+    // per-km RATE is null-safe here, never the raw cost data.
+    expect(detail!.costs.totalsByYear).toEqual([{ year: 2026, totalQar: '100.00' }]);
   });
 });

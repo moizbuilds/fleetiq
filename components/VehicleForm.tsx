@@ -17,13 +17,25 @@
  * below is keyed by the decoded VIN (or the literal 'manual'), so typing a
  * new VIN and decoding again fully remounts the details form with fresh
  * state instead of leaving stale edited values from the previous vehicle.
+ *
+ * WHY an `initialVin` prop (fix round 1, ruling #3): components/
+ * EmptyFleetVin.tsx (the dashboard's empty-fleet VIN input) navigates to
+ * `/vehicles/new?vin=<VIN>` rather than decoding inline itself — this
+ * component is the one place that already owns the decode flow, so it
+ * lifts that trigger in as a prop and auto-runs the SAME `handleDecode`
+ * a manual button click would, instead of a second copy of that logic
+ * living in the dashboard component.
  */
 'use client';
 
 // CONCEPT: useState holds a value that persists across re-renders and
 // triggers a re-render when changed via its setter — this component uses
 // it for "has the user decoded/skipped yet" and "what did vPIC return".
-import { useState } from 'react';
+// CONCEPT: useEffect runs a side effect (something that isn't just
+// "compute a value from props/state") after React has committed a render —
+// used below to auto-trigger a decode once, right after this component
+// mounts with a VIN already supplied.
+import { useEffect, useRef, useState } from 'react';
 import type { VinDecodeResult } from '@/lib/types';
 import { isValidVin } from '@/lib/vin';
 import { VehicleDetailsForm } from './VehicleDetailsForm';
@@ -31,8 +43,22 @@ import { VehicleDetailsForm } from './VehicleDetailsForm';
 const FIELD_INPUT_CLASS =
   'w-full border border-seam bg-panel-2 px-3 py-2 text-bone placeholder:text-steel-dim focus-visible:outline-none';
 
-export function VehicleForm({ hasPhotoUpload }: { hasPhotoUpload: boolean }) {
-  const [vinInput, setVinInput] = useState('');
+export function VehicleForm({
+  hasPhotoUpload,
+  initialVin = null,
+}: {
+  hasPhotoUpload: boolean;
+  // Pre-fills the VIN field (and, if it's shaped like a real VIN, triggers
+  // an immediate decode) — set by app/vehicles/new/page.tsx from the `vin`
+  // search param. `null` (the default) is the normal "blank form" case a
+  // direct visit to /vehicles/new still gets.
+  initialVin?: string | null;
+}) {
+  // Clamped/normalized the same way a keystroke into this field would be
+  // (uppercase, 17-char cap) — initialVin comes straight from the URL
+  // (attacker/user-controlled), and a controlled input's VALUE isn't
+  // constrained by its `maxLength` attribute the way typed keystrokes are.
+  const [vinInput, setVinInput] = useState((initialVin ?? '').trim().toUpperCase().slice(0, 17));
   const [decoding, setDecoding] = useState(false);
   const [decodeError, setDecodeError] = useState<string | null>(null);
   const [decodeResult, setDecodeResult] = useState<VinDecodeResult | null>(null);
@@ -74,6 +100,36 @@ export function VehicleForm({ hasPhotoUpload }: { hasPhotoUpload: boolean }) {
       setDecoding(false);
     }
   }
+
+  // Auto-run the decode — the exact same handleDecode a manual "Decode VIN"
+  // click calls — when this component mounts already holding a VIN from the
+  // URL (fix round 1, ruling #3). A ref (not a dependency array) guards
+  // "only once": handleDecode is a plain function redefined every render
+  // (it closes over the latest vinInput), so listing it as a dependency
+  // would refire this effect on every state change it causes, not just on
+  // mount — the ref sidesteps that without needing useCallback for a
+  // function that's only ever called from two places (a click handler, and
+  // here). The ref is set BEFORE scheduling anything, so React's Strict
+  // Mode dev-only effect/cleanup/effect replay still only ever queues one
+  // microtask (the second invocation sees the ref already true and returns
+  // immediately) — no cleanup/cancellation needed the way
+  // components/IgnitionSequence.tsx's cancellable rAF/timers need one.
+  const autoDecodeRanRef = useRef(false);
+  useEffect(() => {
+    if (autoDecodeRanRef.current) return;
+    autoDecodeRanRef.current = true;
+    if (initialVin === null || !isValidVin(initialVin)) return;
+    // Deferred into a microtask instead of called synchronously in the
+    // effect body, to satisfy react-hooks/set-state-in-effect — same
+    // "setState only from a callback, never synchronously inside an
+    // effect" reasoning as IgnitionSequence, just via queueMicrotask
+    // instead of requestAnimationFrame since this is a one-shot network
+    // call, not a frame-synced animation.
+    queueMicrotask(() => {
+      void handleDecode();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-8">
