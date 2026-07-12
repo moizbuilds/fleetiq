@@ -31,6 +31,16 @@ const isPublicRoute = createRouteMatcher([
   "/api/integrations(.*)",
 ]);
 
+// Plain prefix check rather than createRouteMatcher/path-to-regexp: the
+// pattern we need below is "any /api route that ISN'T /api/integrations",
+// and path-to-regexp's route-pattern syntax (used by createRouteMatcher for
+// string patterns) doesn't support negative-lookahead exclusions — a
+// regex literal would work, but a plain startsWith check is simpler to
+// read correctly than a regex whose semantics are easy to get subtly wrong.
+function isApiRoute(req: NextRequest): boolean {
+  return req.nextUrl.pathname.startsWith("/api/");
+}
+
 const runClerkAuth = clerkMiddleware(
   async (auth, req) => {
     if (!isPublicRoute(req)) {
@@ -53,9 +63,28 @@ const runClerkAuth = clerkMiddleware(
 // app/layout.tsx, which is where the setup-notice guard lives. Without
 // this branch every route would still 500 with placeholder keys, even
 // with that guard in place. Falling through with NextResponse.next() lets
-// the request reach the layout, which renders the setup notice instead.
+// the request reach the layout, which renders the setup notice instead —
+// but ONLY for pages. See the API branch below for why routes are
+// different.
+//
+// WHY API routes fail CLOSED here instead of also falling through: a page
+// falling through just renders the (harmless, static) SetupNotice. An API
+// route falling through would instead reach real Route Handler code with
+// no Clerk session check ever having run — i.e. unauthenticated access to
+// whatever that route does. Middleware that "fails open" like that is a
+// standing landmine for every API route added in later tasks: it works
+// fine today (there ARE no API routes yet) and quietly becomes a data leak
+// the day someone ships one, unless the boundary itself refuses first.
+// Failing closed here means a new route is safe by construction the
+// moment it's deployed, even before its own auth code is reviewed.
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
   if (!hasValidClerkPublishableKey()) {
+    if (isApiRoute(request) && !isPublicRoute(request)) {
+      return NextResponse.json(
+        { error: "Auth is not configured on this deployment" },
+        { status: 503 },
+      );
+    }
     return NextResponse.next();
   }
   return runClerkAuth(request, event);
