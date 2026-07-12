@@ -1,0 +1,7 @@
+{
+  "//": "Extensions VS Code will suggest when you open this project. Tailwind IntelliSense understands v4's @theme/@apply directives (so globals.css stops showing false 'unknown at-rule' errors) and autocompletes the design tokens.",
+  "recommendations": [
+    "bradlc.vscode-tailwindcss",
+    "dbaeumer.vscode-eslint"
+  ]
+}

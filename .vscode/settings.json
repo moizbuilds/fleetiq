@@ -1,0 +1,22 @@
+{
+  "//": "Editor-only settings. These silence false-positive 'errors' VS Code shows that are NOT real build errors — `npm run test`, `tsc --noEmit`, and `next build` are the source of truth.",
+
+  "// tailwind css": "Tailwind v4 uses at-rules like @theme, @apply, @custom-variant that VS Code's built-in CSS validator doesn't recognize and flags as 'Unknown at rule'. Disable the built-in CSS/PostCSS linters; the Tailwind IntelliSense extension (recommended below) understands them.",
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+  "css.validate": false,
+
+  "// next generated types": "Next.js writes generated route types under .next/. If the dev server is force-killed mid-write, a half-written file there can briefly show phantom TypeScript errors across every route. Exclude .next from the editor's file watcher and search so it isn't surfaced; a clean `next dev`/`next build` always regenerates it correctly.",
+  "files.watcherExclude": {
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/.demo-db/**": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/.demo-db": true
+  },
+
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
