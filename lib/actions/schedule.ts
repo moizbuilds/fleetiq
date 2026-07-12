@@ -25,29 +25,10 @@ import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { vehicles, scheduleItems, odometerReadings } from '@/lib/db/schema';
 import { aiScheduleSchema, type AiScheduleItem } from '@/lib/types';
+import { addMonthsUtc } from '@/lib/status';
 
 export interface AcceptScheduleState {
   error?: string;
-}
-
-// Turns `today` + a months interval into a stored `nextDueDate` string
-// (`YYYY-MM-DD`, matching the `date` column — see lib/status.ts's date-math
-// comment for why dates round-trip as plain strings, never Date objects,
-// once stored).
-//
-// CONCEPT: `Date.UTC(year, month, day)` — passing a month value equal to or
-// beyond 11 (December) doesn't throw; JS's Date rolls the extra months
-// forward into later years/months for you (Date.UTC(2026, 13, 1) is the
-// same instant as Date.UTC(2027, 1, 1)). That's exactly what "add N months"
-// needs, but it comes with one accepted quirk worth naming: if `today` is,
-// say, Jan 31 and 1 month is added, there is no Feb 31 — JS rolls that
-// overflow into early March (Mar 2 or Mar 3) rather than clamping to Feb's
-// last day. FleetIQ accepts this (rare, and never wrong in a way that makes
-// an item due EARLIER than it should be) rather than adding clamping logic
-// for an edge case with no real safety consequence.
-function addMonthsUtc(today: Date, months: number): string {
-  const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + months, today.getUTCDate()));
-  return d.toISOString().slice(0, 10);
 }
 
 export async function acceptSchedule(
@@ -127,22 +108,19 @@ export async function acceptSchedule(
     source: 'ai' as const,
   }));
 
-  // WHY db.batch() instead of one multi-row `.values([...])` insert: this
-  // app's Neon HTTP driver has no `.transaction()` support (see
-  // lib/actions/vehicles.ts's comment) — `db.batch()` is its actual
-  // atomicity primitive, sending every statement in one HTTP round trip
-  // that Neon executes as a single all-or-nothing unit. Matching that same
-  // primitive here (rather than introducing a second insert style just
-  // because every row happens to target one table) keeps "how does this
-  // app write multiple rows atomically" answered exactly one way.
-  //
-  // The `[first, ...rest]` destructure (rather than passing the mapped
-  // array directly) satisfies db.batch()'s type — it requires a
-  // known-non-empty tuple, which the `rows.length === 0` check above has
-  // already ruled out by this point.
-  const insertStatements = rows.map((row) => db.insert(scheduleItems).values(row));
-  const [first, ...rest] = insertStatements;
-  await db.batch([first, ...rest]);
+  // A single multi-row insert inside `db.transaction()` — Task 6 migrated
+  // lib/db/index.ts from the neon-http driver (whose only atomicity
+  // primitive was `db.batch()`, one HTTP round trip per call) to
+  // neon-serverless's Pool/WebSocket driver, which supports real
+  // BEGIN/COMMIT transactions. One `.values([...])` insert of every row is
+  // already atomic on its own (a single INSERT statement either fully
+  // succeeds or fully fails), so the transaction wrapper here exists mainly
+  // to keep "how does this app write multiple rows atomically" answered the
+  // same way everywhere (see lib/actions/services.ts's completeService for
+  // a case that genuinely needs multiple statements in one transaction).
+  await db.transaction(async (tx) => {
+    await tx.insert(scheduleItems).values(rows);
+  });
 
   // WHY revalidatePath is still needed even though redirect() below
   // navigates straight to this same path: the vehicle page may already be

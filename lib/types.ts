@@ -161,6 +161,23 @@ const compareDateString = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.')
   .nullable();
 
+// A `YYYY-MM-DD` string, required (not nullable) — the shape every
+// user-entered SERVICE date takes (as opposed to `compareDateString` above,
+// which is nullable because a compliance deadline can be genuinely unset).
+const requiredDateString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.');
+
+// 2,000,000 km is a generous real-world ceiling (far beyond any
+// passenger/light-commercial vehicle's realistic lifetime odometer) — it
+// exists only to catch a fat-fingered extra digit, not to constrain a
+// genuine high-mileage fleet vehicle. WHY a shared constant instead of the
+// literal repeated in createVehicleInputSchema, logOdometerInputSchema, and
+// completeServiceInputSchema below: three copies of "2,000,000" is the
+// exact one-source-of-truth drift globals.md warns about — bump this once
+// here and every km bound in the app moves together.
+export const MAX_ODOMETER_KM = 2_000_000;
+
 export const createVehicleInputSchema = z.object({
   nickname: z.string().trim().min(1, 'Nickname is required.').max(80),
   vin: z
@@ -181,14 +198,61 @@ export const createVehicleInputSchema = z.object({
   istimaraExpiry: compareDateString,
   fahesDue: compareDateString,
   decodeSource: z.enum(['vpic', 'manual', 'mixed']),
-  // 2,000,000 km is a generous real-world ceiling (far beyond any
-  // passenger/light-commercial vehicle's realistic lifetime odometer) —
-  // it exists only to catch a fat-fingered extra digit, not to constrain a
-  // genuine high-mileage fleet vehicle.
-  initialOdometerKm: z.number().int().positive().max(2_000_000).nullable(),
+  initialOdometerKm: z.number().int().positive().max(MAX_ODOMETER_KM).nullable(),
 });
 
 export type CreateVehicleInput = z.infer<typeof createVehicleInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Odometer log (Task 6) — validated server-side in lib/actions/odometer.ts's
+// logOdometer server action, before it ever opens a db.transaction(). This
+// schema only enforces SHAPE/bounds (a malformed vehicleId, a NaN/negative/
+// too-large reading, a note that's too long) — the "is this reading below
+// the vehicle's last one" business rule needs a DB read to answer, so it
+// lives in logOdometerCore instead (see that file's header for why).
+// ---------------------------------------------------------------------------
+export const logOdometerInputSchema = z.object({
+  vehicleId: z.string().refine(isValidUuid, { message: 'Vehicle not found.' }),
+  readingKm: z.number().int().positive().max(MAX_ODOMETER_KM),
+  isCorrection: z.boolean(),
+  // Corrections REQUIRE a non-empty note (enforced in logOdometerCore,
+  // where it can be checked alongside isCorrection — a schema-level
+  // .refine() here would have to re-read isCorrection anyway, so keeping
+  // both halves of that one rule together avoids splitting it across two
+  // files).
+  note: z.string().trim().max(300).nullable(),
+});
+
+export type LogOdometerInput = z.infer<typeof logOdometerInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Service completion (Task 6) — validated server-side in lib/actions/
+// services.ts's completeService server action, same "shape here, DB-backed
+// business rules in the core function" split as logOdometerInputSchema
+// above.
+// ---------------------------------------------------------------------------
+export const completeServiceInputSchema = z
+  .object({
+    vehicleId: z.string().refine(isValidUuid, { message: 'Vehicle not found.' }),
+    scheduleItemId: z.string().refine(isValidUuid, { message: 'Schedule item not found.' }).nullable(),
+    // Required for an unscheduled repair (scheduleItemId === null, enforced
+    // by the .refine() below); for a scheduled item, a blank title defaults
+    // server-side to the item's own name (lib/actions/services.ts) — this
+    // schema alone can't look that name up, so it only enforces "non-blank
+    // IF present" here.
+    title: z.string().trim().min(1).max(80).nullable(),
+    odometerKm: z.number().int().positive().max(MAX_ODOMETER_KM),
+    performedOn: requiredDateString,
+    costQar: z.number().nonnegative().max(1_000_000).nullable(),
+    notes: z.string().trim().max(1000).nullable(),
+    invoicePhotoUrl: z.string().url().nullable(),
+  })
+  .refine((v) => v.scheduleItemId !== null || v.title !== null, {
+    message: 'Title is required for an unscheduled repair.',
+    path: ['title'],
+  });
+
+export type CompleteServiceInput = z.infer<typeof completeServiceInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Drizzle-inferred row types, re-exported here so every layer imports types

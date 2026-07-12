@@ -2,11 +2,27 @@
  * Database client — the one place that turns DATABASE_URL into a live
  * connection every other file in the app talks to.
  *
- * CONCEPT: Neon's "serverless" driver talks to Postgres over HTTP instead
- * of a persistent TCP socket. That matters on Vercel: serverless functions
- * are short-lived and can spin up hundreds of copies at once, and a
- * traditional TCP connection pool doesn't survive a function being frozen
- * between requests — HTTP has no long-lived connection to lose.
+ * CONCEPT: Neon's "serverless" driver family has two flavors. `neon()`
+ * (drizzle-orm/neon-http, Tasks 1-5's driver) talks to Postgres over plain
+ * HTTP — one request per query, no connection held open between them. That
+ * makes it a great fit for a Vercel function that might get frozen between
+ * requests, but it comes with a hard limit: there's no persistent session
+ * for Postgres to run a real multi-statement transaction (BEGIN ... COMMIT)
+ * against, so `db.transaction()` throws on it outright. `Pool` (this file's
+ * driver, drizzle-orm/neon-serverless) instead opens a real — if
+ * short-lived — Postgres session over a WebSocket, which DOES support
+ * `db.transaction()`. Task 6's completeService needs exactly that: read the
+ * vehicle's latest odometer reading and write two-to-three rows as one
+ * atomic, consistent-snapshot unit (see lib/actions/services.ts), which is
+ * precisely what a transaction is for and what the HTTP driver can't do.
+ *
+ * CONCEPT: a WebSocket is a persistent, two-way connection — unlike a
+ * regular HTTP request/response, it stays open so both sides can keep
+ * talking over it, which is what lets `Pool` hold a real Postgres session.
+ * Browsers have a built-in `WebSocket` client; a Node.js server process
+ * (this app's Vercel/local runtime) does not, so the `ws` npm package
+ * stands in for one — `neonConfig.webSocketConstructor = ws` is the one
+ * line that tells Neon's Pool which implementation to use.
  *
  * WHY lazy (`getDb()`) instead of connecting at module load time: Next.js
  * imports every route module while *building* the app (to trace its
@@ -18,13 +34,44 @@
  * actually tries to query, with a message that says what's wrong, instead
  * of an opaque build failure or (worse) a silent connection to nowhere.
  */
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
+import { drizzle, type NeonDatabase } from 'drizzle-orm/neon-serverless';
+import { Pool, neonConfig } from '@neondatabase/serverless';
+import type { PgTransaction, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import type { ExtractTablesWithRelations } from 'drizzle-orm';
+import ws from 'ws';
 import * as schema from './schema';
 
-type Db = ReturnType<typeof drizzle<typeof schema>>;
+neonConfig.webSocketConstructor = ws;
 
-let cached: Db | null = null;
+type Db = NeonDatabase<typeof schema>;
+
+// ---------------------------------------------------------------------------
+// Transaction type shared by every server action whose core logic runs
+// inside `db.transaction()` (Task 6's logOdometer/completeService) AND must
+// be unit-testable against an in-memory PGlite database (see
+// tests/rollforward.test.ts) — the same dependency-injection reasoning as
+// lib/rate-limit.ts's `RateLimitDb` parameter.
+//
+// WHY `PgQueryResultHKT` (the base/abstract result-shape generic) instead of
+// this driver's own `NeonQueryResultHKT`: a core function only ever calls
+// `.select()/.insert()/.update()/.where()` — the shared query-builder API
+// every pg driver exposes — never anything that depends on the RAW
+// query-result shape (`.rows`, driver-specific metadata). Typing against the
+// abstract base is what lets the exact same `AppTx` type describe both this
+// driver's `NeonTransaction` (production) and PGlite's `PgliteTransaction`
+// (tests) — pinning it to one driver's concrete result type would make the
+// other driver's transaction object fail to structurally match.
+//
+// WHY `ExtractTablesWithRelations<typeof schema>` for the third generic
+// (Drizzle's "relational query" config) instead of the simpler-looking
+// `Record<string, never>`: every real `db.transaction()` callback — on
+// either driver — actually receives THIS derived shape (Drizzle computes it
+// from schema.ts even though this app never defines `relations()` calls),
+// not an empty record. Typing `AppTx` with the wrong third generic compiles
+// fine on its own but then fails the moment a real `db.transaction(tx => ...)`
+// call tries to pass its `tx` to a function expecting `AppTx` — caught by
+// `npx tsc --noEmit` while wiring up lib/actions/odometer.ts.
+export type AppTx = PgTransaction<PgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>;
 
 // WHY three checks instead of just the `user:password@host` substring: that
 // substring only catches the exact placeholder .env.example ships with. A
@@ -48,6 +95,8 @@ function isPlaceholder(url: string): boolean {
   }
 }
 
+let cached: Db | null = null;
+
 export function getDb(): Db {
   if (cached) return cached;
 
@@ -58,7 +107,7 @@ export function getDb(): Db {
     );
   }
 
-  const sql = neon(url);
-  cached = drizzle(sql, { schema });
+  const pool = new Pool({ connectionString: url });
+  cached = drizzle(pool, { schema });
   return cached;
 }

@@ -15,6 +15,7 @@
  * surfacing as an opaque 500 instead of the same clean 404 a well-formed
  * but nonexistent id gets.
  */
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { and, desc, eq } from 'drizzle-orm';
 import { requireTenant } from '@/lib/auth';
@@ -97,7 +98,18 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
       </dl>
 
       <div className="mt-8">
-        <p className="eyebrow">Maintenance schedule</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="eyebrow">Maintenance schedule</p>
+          {/* Reachable regardless of whether there's a schedule item to
+              attach it to — an unscheduled repair (Task 6) has no row of
+              its own in the table below. */}
+          <Link
+            href={`/vehicles/${vehicle.id}/log-service`}
+            className="border border-seam px-3 py-1.5 text-xs text-steel transition-colors hover:border-steel-dim hover:text-bone"
+          >
+            Log a service or repair
+          </Link>
+        </div>
 
         {items.length === 0 ? (
           <div className="mt-4">
@@ -105,7 +117,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto border border-seam bg-panel">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-seam text-steel">
                   <th className="px-3 py-2 font-medium">Item</th>
@@ -113,6 +125,9 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                   <th className="px-3 py-2 font-medium">Next due</th>
                   <th className="px-3 py-2 font-medium">Brands</th>
                   <th className="px-3 py-2 font-medium">Source</th>
+                  <th className="px-3 py-2 font-medium">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -146,6 +161,19 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                         >
                           {item.source}
                         </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {/* `?item=` preselects this row's schedule item on
+                            the log-service form (app/vehicles/[id]/
+                            log-service/page.tsx validates it's actually
+                            THIS vehicle's item before trusting it — the
+                            query string is attacker-controlled). */}
+                        <Link
+                          href={`/vehicles/${vehicle.id}/log-service?item=${item.id}`}
+                          className="text-xs text-steel underline decoration-seam underline-offset-4 transition-colors hover:text-bone"
+                        >
+                          Mark done
+                        </Link>
                       </td>
                     </tr>
                   );

@@ -113,19 +113,18 @@ export async function createVehicle(
   const db = getDb();
 
   // Generating the vehicle's id here (instead of letting the DB's
-  // defaultRandom() assign one on insert) is what makes the optional
-  // odometer-reading insert below atomic with the vehicle insert. WHY not
-  // `db.transaction()`: the Neon HTTP driver this app uses (see lib/db/
-  // index.ts) has no persistent connection between requests, so it doesn't
-  // support real BEGIN/COMMIT transactions — calling db.transaction() on it
-  // throws "No transactions support in neon-http driver". `db.batch()` is
-  // the driver's actual atomicity primitive: it sends every query in the
-  // array to Neon in one HTTP round trip, which Neon executes as a single
-  // all-or-nothing transaction. Knowing the vehicle's id up front lets both
-  // inserts be prepared before either one runs, instead of needing the
-  // first insert's `.returning()` result to build the second (which a
-  // single batch call can't do — the queries in the array can't read each
-  // other's results).
+  // defaultRandom() assign one on insert) is what lets both inserts below
+  // be prepared without needing the vehicle insert's `.returning()` result
+  // first.
+  //
+  // WHY `db.transaction()` here (Task 6 migrated lib/db/index.ts from the
+  // Neon HTTP driver, which has no real transaction support, to the
+  // Pool/WebSocket driver, which does — see that file's header comment):
+  // a vehicle added WITH an initial odometer reading needs both rows to
+  // land together or not at all — a crash between the two inserts would
+  // otherwise leave a vehicle with no reading history, silently breaking
+  // every due-status calculation that depends on "the latest reading"
+  // until someone notices and logs one manually.
   const vehicleId = randomUUID();
   const vehicleValues = {
     id: vehicleId,
@@ -144,15 +143,16 @@ export async function createVehicle(
   };
 
   if (input.initialOdometerKm !== null) {
-    await db.batch([
-      db.insert(vehicles).values(vehicleValues),
-      db.insert(odometerReadings).values({
+    const initialOdometerKm = input.initialOdometerKm;
+    await db.transaction(async (tx) => {
+      await tx.insert(vehicles).values(vehicleValues);
+      await tx.insert(odometerReadings).values({
         vehicleId,
         tenantId,
-        readingKm: input.initialOdometerKm,
+        readingKm: initialOdometerKm,
         source: 'manual',
-      }),
-    ]);
+      });
+    });
   } else {
     await db.insert(vehicles).values(vehicleValues);
   }

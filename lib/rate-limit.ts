@@ -19,15 +19,20 @@
  * established.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import type { NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import type { NeonDatabase } from 'drizzle-orm/neon-serverless';
 import type { PgliteDatabase } from 'drizzle-orm/pglite';
 import { aiUsage } from './db/schema';
 import type * as schema from './db/schema';
 
-// Accepts either driver's database handle — Neon's HTTP driver in
-// production, PGlite's in-memory one in tests (see lib/db/index.ts and
-// tests/schema.test.ts for where each comes from).
-export type RateLimitDb = NeonHttpDatabase<typeof schema> | PgliteDatabase<typeof schema>;
+// Accepts either driver's database handle — Neon's Pool/WebSocket driver in
+// production (drizzle-orm/neon-serverless, see lib/db/index.ts for why
+// Task 6 moved off the HTTP-only driver), PGlite's in-memory one in tests
+// (see tests/schema.test.ts for where that comes from). This raw `sql`
+// INSERT...SELECT...WHERE statement is driver-agnostic Postgres — nothing
+// about it depends on which of the two actually executes it, which is what
+// tests/rate-limit.test.ts (unchanged by the driver migration) proves by
+// running it straight against PGlite.
+export type RateLimitDb = NeonDatabase<typeof schema> | PgliteDatabase<typeof schema>;
 
 // Single source of truth for every AI endpoint's limit — Task 7's invoice
 // extraction imports this same object instead of hard-coding its own "20"

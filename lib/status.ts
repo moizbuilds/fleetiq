@@ -95,6 +95,52 @@ function formatDays(n: number): string {
   return `${n} day${n === 1 ? '' : 's'}`;
 }
 
+const SHORT_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+// Short 'en-GB'-style date label ("5 Jul") — used by lib/actions/odometer.ts's
+// below-latest-reading error message (task-6-brief.md's exact wording:
+// "...below the last reading (12,730 km on 5 Jul)...").
+//
+// WHY plain UTC getters instead of `Intl`'s `toLocaleDateString(..., {
+// timeZone: 'UTC' })`: `recordedAt` is a Postgres `timestamp` WITHOUT time
+// zone (see lib/rate-limit.ts's comment on `aiUsage.createdAt` for the same
+// gotcha) — different drivers/environments can disagree on what time zone a
+// naive timestamp implicitly means once it round-trips into a JS `Date`.
+// Reading that Date's UTC components directly (rather than asking Intl to
+// re-interpret it through a timezone) means this function's output only
+// ever depends on the Date object's own stored instant, never on the
+// runtime's local timezone or an Intl polyfill's behavior.
+export function formatShortDate(d: Date): string {
+  return `${d.getUTCDate()} ${SHORT_MONTHS[d.getUTCMonth()]}`;
+}
+
+// Turns a UTC date + a months interval into a stored `YYYY-MM-DD` string
+// (matching the `date` column shape — see the date-math comment above for
+// why dates round-trip as plain strings, never Date objects, once stored).
+// Originally lived in lib/actions/schedule.ts (which seeded a schedule
+// item's first `nextDueDate` from "today" + intervalMonths); Task 6's
+// completeService needs the identical math to roll a date threshold forward
+// from a service's `performedOn` date instead — extracted here so both
+// callers share one implementation instead of two copies that could drift
+// (globals.md's one-source-of-truth rule).
+//
+// CONCEPT: `Date.UTC(year, month, day)` — passing a month value equal to or
+// beyond 11 (December) doesn't throw; JS's Date rolls the extra months
+// forward into later years/months for you (Date.UTC(2026, 13, 1) is the
+// same instant as Date.UTC(2027, 1, 1)). That's exactly what "add N months"
+// needs, but it comes with one accepted quirk worth naming: if `from` is,
+// say, Jan 31 and 1 month is added, there is no Feb 31 — JS rolls that
+// overflow into early March (Mar 2 or Mar 3) rather than clamping to Feb's
+// last day. FleetIQ accepts this (rare, and never wrong in a way that makes
+// an item due EARLIER than it should be) rather than adding clamping logic
+// for an edge case with no real safety consequence.
+export function addMonthsUtc(from: Date, months: number): string {
+  const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + months, from.getUTCDate()));
+  return d.toISOString().slice(0, 10);
+}
+
 // Builds the human-readable label shared by computeItemStatus and
 // computeComplianceStatus, given the already-decided state and remainders.
 // WHY one shared builder instead of writing the string inline in both
