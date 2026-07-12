@@ -42,6 +42,7 @@
 import { cache } from 'react';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
+import { isDemoMode, DEMO_TENANT_ID, DEMO_USER_ID } from './demo';
 
 // Auto-provisions a single-user "organization" the first time someone signs
 // in with no org membership at all yet.
@@ -74,6 +75,17 @@ async function ensurePersonalOrg(userId: string): Promise<string> {
 // call sites (page loads vs. API calls) would risk drifting on how a tenant
 // gets resolved.
 export async function resolveTenantId(userId: string, orgId: string | null): Promise<string> {
+  // Demo mode (lib/demo.ts) has no Clerk session to derive a tenant from at
+  // all — `userId`/`orgId` above wouldn't even be real values in demo mode
+  // (every call site that could reach here with demo mode on short-circuits
+  // before ever calling Clerk's `auth()`; see requireTenant() below). This
+  // fixed id is the ONE tenant every row lib/demo-seed.ts inserts belongs
+  // to, so short-circuiting here keeps that single fact true no matter
+  // which caller resolves the tenant.
+  if (isDemoMode()) {
+    return DEMO_TENANT_ID;
+  }
+
   // Fast path: the session already carries an active org (either the user
   // picked one, or `sync-active-org.tsx` set it on a previous request).
   if (orgId) {
@@ -113,6 +125,18 @@ export async function resolveTenantId(userId: string, orgId: string | null): Pro
 // very first request renders multiple components before any of them
 // finishes.
 export const requireTenant = cache(async (): Promise<{ tenantId: string; userId: string }> => {
+  // Demo mode: skip Clerk's `auth()` entirely rather than just short-
+  // circuiting AFTER calling it. `auth()` reads session state that
+  // proxy.ts's clerkMiddleware would normally attach to the request — and
+  // in demo mode proxy.ts never runs clerkMiddleware at all (it returns
+  // `NextResponse.next()` unconditionally; see that file's header), so
+  // calling `auth()` here would throw a "clerkMiddleware() must be used"
+  // error instead of just returning an empty session. Every page/action
+  // that calls requireTenant() gets the same fixed fake identity instead.
+  if (isDemoMode()) {
+    return { tenantId: DEMO_TENANT_ID, userId: DEMO_USER_ID };
+  }
+
   const { userId, orgId } = await auth();
 
   if (!userId) {

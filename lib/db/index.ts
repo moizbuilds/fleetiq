@@ -40,6 +40,8 @@ import type { PgTransaction, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ExtractTablesWithRelations } from 'drizzle-orm';
 import ws from 'ws';
 import * as schema from './schema';
+import { isDemoMode } from '../demo';
+import { getDemoDb } from './demo-db';
 
 neonConfig.webSocketConstructor = ws;
 
@@ -98,6 +100,31 @@ function isPlaceholder(url: string): boolean {
 let cached: Db | null = null;
 
 export function getDb(): Db {
+  // Demo mode (lib/demo.ts) swaps Neon for a local, file-backed PGlite
+  // database — see lib/db/demo-db.ts for the setup (migrations + seed data)
+  // this branches to. WHY this check runs FIRST, before anything below
+  // even reads DATABASE_URL: demo mode is meant to work with ZERO env vars
+  // set at all, and the Neon branch below throws the instant DATABASE_URL
+  // is missing/placeholder — this early return is what keeps that throw
+  // from ever running when FLEETIQ_DEMO=1. Every other line in this
+  // function (the Neon Pool, the placeholder check, the `cached` var
+  // below) is completely unreached in demo mode, so the production path
+  // stays byte-for-byte what it was before demo mode existed.
+  if (isDemoMode()) {
+    // WHY the cast: `getDemoDb()` returns a `PgliteDatabase`, not a
+    // `NeonDatabase` — a different concrete drizzle driver class than this
+    // function's `Db` return type names. Every caller of `getDb()` only
+    // ever uses the shared query-builder surface both drivers implement
+    // identically (`.select()/.insert()/.update()/.where()/.transaction()`
+    // — see lib/queries.ts's `QueryDb` and lib/rate-limit.ts's
+    // `RateLimitDb`, which already type their own `db` parameters as
+    // exactly this two-driver union), so the cast doesn't change what any
+    // caller can actually do with the result — it just tells TypeScript
+    // what's already true at runtime, the same way lib/queries.ts's
+    // `rankItems` cast does for a structurally-identical reason.
+    return getDemoDb() as unknown as Db;
+  }
+
   if (cached) return cached;
 
   const url = process.env.DATABASE_URL;

@@ -25,6 +25,7 @@ import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextRequest } from "next/server";
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { hasValidClerkPublishableKey } from "@/lib/env";
+import { isDemoMode } from "@/lib/demo";
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
@@ -78,6 +79,18 @@ const runClerkAuth = clerkMiddleware(
 // Failing closed here means a new route is safe by construction the
 // moment it's deployed, even before its own auth code is reviewed.
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  // Demo mode (lib/demo.ts) has no Clerk session, no ClerkProvider, and no
+  // signed-in visitor concept at all — every route is public. This has to
+  // come before EVERYTHING below, including the placeholder-key check:
+  // calling `runClerkAuth`/`clerkMiddleware` at all would throw the instant
+  // it ran against a missing publishable key, and even the API-routes
+  // "fail closed with a 503" branch below doesn't apply here — a 503 would
+  // make demo mode look broken, when the correct behavior is "no auth
+  // check at all, by design, because there's no session to check."
+  if (isDemoMode()) {
+    return NextResponse.next();
+  }
+
   if (!hasValidClerkPublishableKey()) {
     if (isApiRoute(request) && !isPublicRoute(request)) {
       return NextResponse.json(

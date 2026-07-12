@@ -18,8 +18,10 @@ import { ClerkProvider, Show } from "@clerk/nextjs";
 import { NavShell } from "@/components/nav-shell";
 import { SetupNotice } from "@/components/setup-notice";
 import { SyncActiveOrg } from "@/components/sync-active-org";
+import { DemoModeBanner } from "@/components/demo-mode-banner";
 import { clerkAppearance } from "@/lib/clerk-appearance";
 import { hasValidClerkPublishableKey } from "@/lib/env";
+import { isDemoMode } from "@/lib/demo";
 import "./globals.css";
 
 // CONCEPT: next/font/google downloads and self-hosts Google Fonts at build
@@ -59,6 +61,45 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const fontClassName = `${archivo.variable} ${plexMono.variable} h-full`;
+
+  // Demo mode (lib/demo.ts) renders the exact same nav/page shell as the
+  // real app, just WITHOUT ClerkProvider (there's no Clerk session to
+  // provide — see lib/auth.ts's requireTenant()), WITHOUT the SetupNotice
+  // branch below (demo mode isn't a "keys are missing" state, it's a
+  // deliberate mode with its own working keyless database — see
+  // lib/db/demo-db.ts), and WITHOUT <SyncActiveOrg> (it calls Clerk's
+  // useAuth()/useOrganizationList() hooks, which throw outside a
+  // ClerkProvider). This has to be its own early return, checked BEFORE
+  // hasValidClerkPublishableKey() below: demo mode never sets a Clerk key
+  // at all, so it would otherwise always fall into the SetupNotice branch.
+  if (isDemoMode()) {
+    return (
+      <html lang="en" className={fontClassName}>
+        <body className="flex min-h-full flex-col">
+          <DemoModeBanner />
+          {/* Skip link: invisible until keyboard-focused, lets keyboard
+              users jump past the nav straight to page content instead of
+              tabbing through every nav link on every page load. */}
+          <a
+            href="#main-content"
+            className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:top-4 focus-visible:left-4 focus-visible:z-50 focus-visible:border focus-visible:border-seam focus-visible:bg-panel focus-visible:px-4 focus-visible:py-2 focus-visible:text-bone"
+          >
+            Skip to content
+          </a>
+          <div className="flex flex-1 flex-col md:flex-row">
+            <NavShell />
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 md:px-8 md:py-10"
+            >
+              {children}
+            </main>
+          </div>
+        </body>
+      </html>
+    );
+  }
 
   // Short-circuit before ClerkProvider mounts at all — ClerkProvider
   // throws on a malformed publishable key, which would otherwise surface

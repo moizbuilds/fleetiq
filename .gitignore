@@ -3,6 +3,10 @@
 # repo-specific (kept from before scaffolding)
 .superpowers/
 
+# demo mode's local, file-backed PGlite database (lib/db/demo-db.ts) —
+# generated/seeded on first run, machine-local, never something to commit.
+.demo-db/
+
 # dependencies
 node_modules/
 /.pnp
