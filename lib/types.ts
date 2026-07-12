@@ -86,21 +86,36 @@ export type AiScheduleItem = z.infer<typeof aiScheduleItemSchema>;
 // mean a brand-new-from-factory car at THIS service event, which never
 // happens for a garage invoice; the same z.number().nullable() laxness that
 // let 0/negative intervals slip through above applied here too.
+//
+// WHY every string/array field below got a max() bound (same reasoning as
+// aiScheduleItemSchema's bounds above): a well-behaved response never
+// brushes against these, but nothing else stops a misbehaving model call
+// from returning a pathologically long field. Bounds are generous relative
+// to a real invoice (a Qatar garage receipt has a handful of line items,
+// not hundreds) so they only ever reject the pathological case.
 const aiInvoiceLineItemSchema = z.object({
-  description: z.string(),
+  description: z.string().max(300),
   partOrService: z.enum(['part', 'service', 'other']),
   costQar: z.number().nonnegative().nullable(),
 });
 
 export const aiInvoiceSchema = z.object({
-  garageName: z.string().nullable(),
-  serviceDate: z.string().nullable(),
+  garageName: z.string().max(200).nullable(),
+  // Deliberately NOT regex-validated to YYYY-MM-DD here: rejecting the
+  // WHOLE extraction over one oddly-formatted date would throw away a
+  // correctly-read cost/odometer/lineItems alongside it (globals.md's
+  // "never fabricate" cuts both ways — a partial real result beats no
+  // result at all). components/ServiceForm.tsx checks this string's shape
+  // itself before using it to pre-fill a native `<input type="date">`, and
+  // leaves that field untouched if it doesn't match — the max() bound below
+  // still rejects pathologically long garbage.
+  serviceDate: z.string().max(40).nullable(),
   odometerKm: z.number().positive().nullable(),
   totalCostQar: z.number().nonnegative().nullable(),
-  lineItems: z.array(aiInvoiceLineItemSchema),
+  lineItems: z.array(aiInvoiceLineItemSchema).max(50),
   // Model's own notes on what it wasn't sure about — surfaced in the UI so
   // the user knows which pre-filled fields to double check before saving.
-  confidenceNotes: z.string(),
+  confidenceNotes: z.string().max(500),
 });
 
 export type AiInvoice = z.infer<typeof aiInvoiceSchema>;
@@ -178,6 +193,13 @@ const requiredDateString = z
 // here and every km bound in the app moves together.
 export const MAX_ODOMETER_KM = 2_000_000;
 
+// Same one-source-of-truth reasoning as MAX_ODOMETER_KM above: this cap is
+// enforced here (completeServiceInputSchema, below) AND used by Task 7's
+// lib/ai/invoice.ts to truncate its AI-generated notes summary BEFORE it
+// ever reaches this schema — a shared constant means those two call sites
+// can't quietly drift to different limits.
+export const MAX_SERVICE_NOTES_LENGTH = 1000;
+
 export const createVehicleInputSchema = z.object({
   nickname: z.string().trim().min(1, 'Nickname is required.').max(80),
   vin: z
@@ -244,7 +266,7 @@ export const completeServiceInputSchema = z
     odometerKm: z.number().int().positive().max(MAX_ODOMETER_KM),
     performedOn: requiredDateString,
     costQar: z.number().nonnegative().max(1_000_000).nullable(),
-    notes: z.string().trim().max(1000).nullable(),
+    notes: z.string().trim().max(MAX_SERVICE_NOTES_LENGTH).nullable(),
     invoicePhotoUrl: z.string().url().nullable(),
   })
   .refine((v) => v.scheduleItemId !== null || v.title !== null, {

@@ -4,12 +4,32 @@
  * the odometer/date/cost/notes, optionally attach an invoice photo, submit.
  * Every field is controlled (useState) for the same React-19-form-reset
  * reason as components/OdometerForm.tsx — see that file's header.
+ *
+ * Task 7 added components/InvoiceScan.tsx (mounted below): scanning an
+ * invoice PRE-FILLS these same controlled fields via `handleExtracted`
+ * below — it never bypasses the manual submit flow. Fields the extraction
+ * came back null for are left exactly as the user last set them; only Save
+ * (handleSubmit -> completeService) ever writes anything.
  */
 'use client';
 
 import { useActionState, useState } from 'react';
 import { completeService, uploadInvoicePhoto, type CompleteServiceState } from '@/lib/actions/services';
 import { ALLOWED_PHOTO_TYPES, MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
+import { buildNotesFromExtraction } from '@/lib/ai/invoice';
+import type { AiInvoice } from '@/lib/types';
+import { InvoiceScan } from './InvoiceScan';
+
+// A user-entered date field only ever contains YYYY-MM-DD (the native
+// `<input type="date">`'s only output format) — but extraction.serviceDate
+// is untrusted MODEL output, and aiInvoiceSchema deliberately does NOT
+// enforce this shape (lib/types.ts's comment on why: rejecting the whole
+// extraction over one malformed date would throw away a correctly-read
+// cost/odometer/lineItems alongside it). This regex is the guard that keeps
+// a stray "12 July 2026"-shaped response from ever reaching `performedOn`'s
+// controlled state, where it would silently fail to populate the date
+// input instead of erroring loudly.
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface ServiceScheduleItemOption {
   id: string;
@@ -61,6 +81,12 @@ export function ServiceForm({
   const [costQar, setCostQar] = useState('');
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState<PhotoState>({ status: 'idle' });
+  // Whether an AI scan has pre-filled this form at least once — drives the
+  // "Extracted by AI — check every field before saving" banner. Deliberately
+  // sticky (never reset back to false) once a scan succeeds: the reminder to
+  // double-check stays visible for the rest of this editing session, even
+  // after the user starts hand-editing the pre-filled values.
+  const [aiExtracted, setAiExtracted] = useState(false);
 
   const [state, dispatch, isPending] = useActionState<
     CompleteServiceState,
@@ -93,6 +119,55 @@ export function ServiceForm({
       return;
     }
     setPhoto({ status: 'done', fileName: file.name, url: result.url });
+  }
+
+  // Pre-fills this form's controlled fields from a successful AI scan
+  // (components/InvoiceScan.tsx's onExtracted prop). Every assignment below
+  // is guarded so a NULL/unusable field from the extraction leaves whatever
+  // the user already typed untouched, rather than blanking it — the same
+  // "don't clobber real input" rule as VehicleDetailsForm's reset-survival
+  // pattern, just applied to an AI pre-fill instead of a failed submit.
+  function handleExtracted(extraction: AiInvoice, photoUrl: string | null) {
+    if (extraction.totalCostQar !== null) {
+      setCostQar(extraction.totalCostQar.toString());
+    }
+    if (extraction.serviceDate !== null && ISO_DATE_PATTERN.test(extraction.serviceDate) && extraction.serviceDate <= today) {
+      setPerformedOn(extraction.serviceDate);
+    }
+    if (extraction.odometerKm !== null) {
+      setOdometerKm(Math.trunc(extraction.odometerKm).toString());
+    }
+
+    // The synthesized notes summary is only applied when it actually has
+    // content — an extraction with no line items and no confidenceNotes
+    // (e.g. a garage name and total only) builds an empty string, and
+    // overwriting the user's existing notes with "" would be exactly the
+    // kind of silent-clobber this whole function is written to avoid.
+    const builtNotes = buildNotesFromExtraction(extraction);
+    if (builtNotes !== '') {
+      setNotes(builtNotes);
+    }
+
+    // The scanned photo IS stored in Blob only when photoUrl is non-null
+    // (app/api/ai/invoice/route.ts returns null when Blob isn't
+    // configured, or if the upload itself failed) — reusing the same
+    // `photo` state the manual attach field renders from means there's one
+    // source of truth for "what invoicePhotoUrl gets submitted," regardless
+    // of which flow produced it. A null photoUrl leaves `photo` exactly as
+    // it was (e.g. still 'idle', or a PREVIOUS manual attach stays intact).
+    if (photoUrl !== null) {
+      setPhoto({ status: 'done', fileName: 'Scanned invoice', url: photoUrl });
+    }
+
+    // Nice-to-have per task-7-brief.md: an unscheduled repair with no title
+    // typed yet gets the first line item's description as a starting point
+    // — cheap since `title` is already controlled, and the user can still
+    // edit or clear it like anything else on this form.
+    if (selectedItemId === UNSCHEDULED && title.trim() === '' && extraction.lineItems.length > 0) {
+      setTitle(extraction.lineItems[0].description.slice(0, 80));
+    }
+
+    setAiExtracted(true);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -225,6 +300,22 @@ export function ServiceForm({
         />
       </label>
 
+      {/* Task 7: invoice scan — deliberately mounted UNCONDITIONALLY
+          (unlike the manual attach field below, this is not gated on
+          `hasPhotoUpload`): extraction works via Claude's vision API alone,
+          with or without Blob photo storage configured. InvoiceScan's own
+          copy tells the user when the scanned photo itself won't be
+          stored. See components/InvoiceScan.tsx and app/api/ai/invoice/
+          route.ts. */}
+      <InvoiceScan hasPhotoStorage={hasPhotoUpload} onExtracted={handleExtracted} />
+
+      {aiExtracted && (
+        <div className="border border-seam bg-panel-2 p-4">
+          <p className="eyebrow">AI Scan</p>
+          <p className="mt-2 text-sm text-bone">Extracted by AI — check every field before saving.</p>
+        </div>
+      )}
+
       {hasPhotoUpload ? (
         <div>
           <label className="block">
@@ -236,12 +327,6 @@ export function ServiceForm({
               className="block w-full text-sm text-steel file:mr-4 file:border file:border-seam file:bg-panel-2 file:px-3 file:py-1.5 file:text-sm file:text-bone"
             />
           </label>
-          {/* Task 7: invoice scan pre-fill — once an invoice photo is
-              attached above, a future task reads it back with Claude and
-              pre-fills odometer/date/cost/notes from the extraction
-              (globals.md: extraction pre-fills forms, never auto-saves).
-              This mount point is where that "Use scanned values" review UI
-              will render once the photo finishes uploading. */}
           <div aria-live="polite">
             {photo.status === 'uploading' && (
               <p className="mt-1.5 text-sm text-steel">Uploading {photo.fileName}…</p>

@@ -16,4 +16,11 @@ export function getAnthropic(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is required');
   return (client ??= new Anthropic({ timeout: 60_000, maxRetries: 2 }));
 }
-export const MODEL = 'claude-sonnet-5';
+
+// Re-exported from lib/ai/model.ts (Task 7) rather than defined here — see
+// that file's header for why: a module that only needs the model ID string
+// (like lib/ai/invoice.ts's client-bundle-reachable buildNotesFromExtraction)
+// must NOT be forced to also import the Anthropic SDK constructor above.
+// Existing `import { MODEL } from './client'` call sites (lib/ai/schedule.ts)
+// keep working unchanged.
+export { MODEL } from './model';
