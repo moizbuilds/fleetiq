@@ -30,8 +30,6 @@ export interface AcceptScheduleState {
   error?: string;
 }
 
-const MAX_ITEM_NAME_LENGTH = 60;
-
 // Turns `today` + a months interval into a stored `nextDueDate` string
 // (`YYYY-MM-DD`, matching the `date` column — see lib/status.ts's date-math
 // comment for why dates round-trip as plain strings, never Date objects,
@@ -85,15 +83,13 @@ export async function acceptSchedule(
     return { error: 'Add at least one schedule item before accepting.' };
   }
 
-  // The schema above doesn't cap name length (that's a UI-table concern,
-  // not a "is this a coherent AI schedule item" concern) — enforced here
-  // instead, same reasoning as createVehicleInputSchema's field limits.
-  for (const item of parsedItems.data) {
-    const trimmedName = item.name.trim();
-    if (trimmedName.length === 0 || trimmedName.length > MAX_ITEM_NAME_LENGTH) {
-      return { error: `Each item needs a name between 1 and ${MAX_ITEM_NAME_LENGTH} characters.` };
-    }
-  }
+  // WHY there's no separate name-length loop here anymore (review round 1,
+  // finding #2): `aiScheduleItemSchema.name` now enforces `.trim().min(1).max(60)`
+  // directly, so the `.safeParse()` call above already rejects a blank or
+  // over-long name — re-checking it here would just be the same rule
+  // written a second time, exactly the "one source of truth" drift
+  // globals.md warns about. `parsedItems.data[i].name` below is already
+  // trimmed by the schema's own `.trim()` transform.
 
   // The vehicle's most recent odometer reading (there may be none yet, e.g.
   // a vehicle added with no initial reading) — every km-based threshold
@@ -110,12 +106,21 @@ export async function acceptSchedule(
   const rows = parsedItems.data.map((item) => ({
     vehicleId,
     tenantId,
-    name: item.name.trim(),
+    // Already trimmed by aiScheduleItemSchema's `.trim()` transform above —
+    // not re-trimmed here, so there's exactly one place that decides what
+    // counts as this row's name.
+    name: item.name,
     intervalKm: item.intervalKm,
     intervalMonths: item.intervalMonths,
     // THRESHOLDS, not countdowns (globals.md) — computed once here, at
     // acceptance time, and never recomputed until the item is actually
     // serviced (a later task's concern).
+    //
+    // Bounded, not overflow-prone: intervalKm is capped at 100,000 by
+    // aiScheduleItemSchema and currentKm is capped at 2,000,000 by
+    // createVehicleInputSchema's initialOdometerKm bound (odometer readings
+    // only ever grow from that seed) — so this sum tops out around 2.1M,
+    // nowhere near a number precision or `integer` column concern.
     nextDueKm: item.intervalKm !== null && currentKm !== null ? currentKm + item.intervalKm : null,
     nextDueDate: item.intervalMonths !== null ? addMonthsUtc(today, item.intervalMonths) : null,
     brandRecommendations: item.brandRecommendations,

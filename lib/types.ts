@@ -36,20 +36,40 @@ import { isValidVin } from './vin';
 // zero or always-be-overdue wherever this feeds a due-date calculation.
 // Rejecting it here means a malformed AI response never reaches the DB in
 // the first place.
+// WHY every field below got an upper bound (review round 1, finding #2)
+// even though a well-behaved Claude response would never hit them: this
+// schema is the ONE gate between raw model output and both (a) what
+// `app/api/ai/schedule/route.ts` hands back to the browser and (b) what
+// `lib/actions/schedule.ts`'s `acceptSchedule` re-validates before writing
+// to Postgres. A single AI response can't blow past these caps on its own,
+// but nothing stopped a runaway/misbehaving model call — or a client
+// hand-crafting the `acceptSchedule` request body directly, since that
+// server action is a real reachable endpoint — from sending an
+// arbitrarily large payload. Bounds are set generously above any real
+// schedule (30 items, 5 brands, 60-char name/brand strings, 300-char
+// rationale, 100,000km / 120-month intervals) so a legitimate response
+// never brushes against them; they exist purely to reject the pathological
+// case, not to constrain a real one.
 const aiScheduleItemSchema = z
   .object({
-    name: z.string(),
-    intervalKm: z.number().int().positive().nullable(),
-    intervalMonths: z.number().int().positive().nullable(),
-    brandRecommendations: z.array(z.string()),
-    rationale: z.string(),
+    // 60 is the same cap `lib/actions/schedule.ts` used to enforce with a
+    // second, hand-rolled length check after this schema's `.safeParse()`
+    // already ran — moving the cap into the schema itself means "how long
+    // can a schedule item's name be" is answered in exactly one place, so
+    // the route (validating a fresh AI response) and the server action
+    // (re-validating a client-edited one) can never drift out of sync.
+    name: z.string().trim().min(1).max(60),
+    intervalKm: z.number().int().positive().max(100_000).nullable(),
+    intervalMonths: z.number().int().positive().max(120).nullable(),
+    brandRecommendations: z.array(z.string().trim().min(1).max(60)).max(5),
+    rationale: z.string().max(300),
   })
   .refine((item) => item.intervalKm !== null || item.intervalMonths !== null, {
     message: 'Each schedule item needs at least one of intervalKm or intervalMonths.',
   });
 
 export const aiScheduleSchema = z.object({
-  items: z.array(aiScheduleItemSchema),
+  items: z.array(aiScheduleItemSchema).max(30),
 });
 
 export type AiSchedule = z.infer<typeof aiScheduleSchema>;

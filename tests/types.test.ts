@@ -66,6 +66,42 @@ describe('aiScheduleSchema', () => {
     );
     expect(result.success).toBe(true);
   });
+
+  // WHY these caps exist at all (review round 1, finding #2): this schema is
+  // the only gate on both a fresh AI response (app/api/ai/schedule/route.ts)
+  // AND a client-edited payload re-validated by lib/actions/schedule.ts's
+  // acceptSchedule server action — the latter is a real reachable endpoint,
+  // so nothing besides this schema stops an arbitrarily large request body
+  // from reaching Postgres. Bounds are set well above any real schedule, so
+  // these tests assert the pathological case is rejected without needing to
+  // assert exactly where a realistic one sits relative to the cap.
+  it('rejects a schedule with 31 items (over the 30-item cap)', () => {
+    const items = Array.from({ length: 31 }, (_, i) => ({ ...baseItem, name: `Item ${i}` }));
+    const result = aiScheduleSchema.safeParse({ items });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an item with 6 brand recommendations (over the 5-brand cap)', () => {
+    const result = aiScheduleSchema.safeParse(
+      scheduleWith({ brandRecommendations: ['A', 'B', 'C', 'D', 'E', 'F'] }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects intervalKm: 100001 (over the 100,000km cap)', () => {
+    const result = aiScheduleSchema.safeParse(scheduleWith({ intervalKm: 100_001 }));
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a legit 10-item schedule (well under every cap)', () => {
+    const items = Array.from({ length: 10 }, (_, i) => ({
+      ...baseItem,
+      name: `Item ${i}`,
+      brandRecommendations: ['Shell Helix', 'Castrol'],
+    }));
+    const result = aiScheduleSchema.safeParse({ items });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe('aiInvoiceSchema', () => {

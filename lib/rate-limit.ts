@@ -48,23 +48,62 @@ export async function checkRateLimit(
   limit: number,
   windowMinutes: number,
 ): Promise<RateLimitResult> {
-  // WHY the window boundary and the "minutes until reset" figure are BOTH
-  // computed inside this one SQL query (via `now()` and `make_interval`)
-  // instead of comparing `aiUsage.createdAt` against a `new Date()` built
-  // in this Node process: this file's `created_at` column is a Postgres
-  // `timestamp` with NO time zone attached. Reading such a column back
-  // through a driver hands JS a plain Date built from a "naive" wall-clock
-  // string, and different drivers/environments disagree on what time zone
-  // that string implicitly means — worked out the hard way in this task's
-  // own PGlite test, where a naive round-trip skewed every reading by
-  // exactly the local machine's UTC offset. Doing the whole comparison
-  // inside Postgres means there is only ONE clock involved (the database's
-  // own `now()`), so this function's correctness can't depend on what time
-  // zone the Node process (or CI, or a contributor's laptop) happens to be
-  // running in.
+  // WHY the "is this call under the limit" check and the row that RECORDS
+  // this call are ONE INSERT...SELECT...WHERE...RETURNING statement instead
+  // of a SELECT-count-then-INSERT pair (the original implementation): two
+  // separate round trips leave a gap between "count came back below the
+  // limit" and "row got inserted" where OTHER concurrent requests can read
+  // that same below-limit count before any of them has inserted yet — every
+  // one of them sees "allowed" and all insert, overshooting the cap by as
+  // many requests as arrived in that gap. A single statement closes this:
+  // Postgres evaluates the WHERE subquery's count(*) and performs (or skips)
+  // this statement's own INSERT against one consistent snapshot, so no
+  // request running this exact statement can straddle that gap.
+  //
+  // Residual risk, accepted rather than eliminated: Neon's HTTP driver has
+  // no session/connection to hold an advisory lock across statements, and
+  // each HTTP call may land on a different underlying Postgres connection —
+  // so two requests whose single INSERT statements execute at the EXACT
+  // same instant on different connections could still both pass. That
+  // window is far narrower than the old two-round-trip gap (bounded by true
+  // statement-level simultaneity, not by network latency between a SELECT
+  // and an INSERT), and closing it fully would need a lock primitive this
+  // driver doesn't expose — see tests/rate-limit.test.ts for the "denied
+  // call inserts no row" test that pins the fix's actual behavior.
+  const insertResult = await db.execute<{ id: string }>(sql`
+    INSERT INTO ai_usage (tenant_id, endpoint)
+    SELECT ${tenantId}, ${endpoint}
+    WHERE (
+      SELECT count(*) FROM ai_usage
+      WHERE tenant_id = ${tenantId}
+        AND endpoint = ${endpoint}
+        AND created_at > now() - make_interval(mins => ${windowMinutes})
+    ) < ${limit}
+    RETURNING id
+  `);
+
+  if (insertResult.rows.length > 0) {
+    return { allowed: true };
+  }
+
+  // Denied — the INSERT above was skipped (no row landed), so this is a
+  // read-only follow-up purely to compute the "try again in N minutes"
+  // figure for the caller. WHY this second query still does the whole
+  // "minutes until reset" calculation inside SQL (via `now()` and
+  // `make_interval`) rather than comparing `aiUsage.createdAt` against a
+  // `new Date()` built in this Node process: this table's `created_at`
+  // column is a Postgres `timestamp` with NO time zone attached. Reading
+  // such a column back through a driver hands JS a plain Date built from a
+  // "naive" wall-clock string, and different drivers/environments disagree
+  // on what time zone that string implicitly means — worked out the hard
+  // way in this task's own PGlite test, where a naive round-trip skewed
+  // every reading by exactly the local machine's UTC offset. Doing the
+  // whole comparison inside Postgres means there is only ONE clock involved
+  // (the database's own `now()`), so this function's correctness can't
+  // depend on what time zone the Node process (or CI, or a contributor's
+  // laptop) happens to be running in.
   const [row] = await db
     .select({
-      usedCount: sql<number>`count(*)::int`,
       minutesUntilReset: sql<number | null>`
         extract(epoch from (min(${aiUsage.createdAt}) + make_interval(mins => ${windowMinutes}) - now())) / 60
       `,
@@ -74,17 +113,12 @@ export async function checkRateLimit(
       and(
         eq(aiUsage.tenantId, tenantId),
         eq(aiUsage.endpoint, endpoint),
-        sql`${aiUsage.createdAt} >= now() - make_interval(mins => ${windowMinutes})`,
+        sql`${aiUsage.createdAt} > now() - make_interval(mins => ${windowMinutes})`,
       ),
     );
 
-  if (row.usedCount >= limit) {
-    // Math.max(1, ...) guards the boundary millisecond where the window
-    // has *just* elapsed — "try again in 0 minutes" isn't a sane message.
-    const retryAfterMinutes = Math.max(1, Math.ceil(row.minutesUntilReset ?? 0));
-    return { allowed: false, retryAfterMinutes };
-  }
-
-  await db.insert(aiUsage).values({ tenantId, endpoint });
-  return { allowed: true };
+  // Math.max(1, ...) guards the boundary millisecond where the window has
+  // *just* elapsed — "try again in 0 minutes" isn't a sane message.
+  const retryAfterMinutes = Math.max(1, Math.ceil(row?.minutesUntilReset ?? 0));
+  return { allowed: false, retryAfterMinutes };
 }
