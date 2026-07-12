@@ -1,10 +1,11 @@
 /**
- * Vehicle detail page ("/vehicles/[id]") — Task 4 built the core-fields
- * placeholder; Task 5 adds the AI maintenance-schedule flow (generate,
- * review, accept). Odometer history, the service log, and this page's full
- * instrument styling (OdometerReadout, AnnunciatorLamp, IntervalGauge) all
- * arrive in Task 8 — the schedule table below is deliberately plain, just
- * token-consistent, until then.
+ * Vehicle detail page ("/vehicles/[id]") — full instrument-panel build
+ * (Task 8): header (photo, plate, VIN, decode badge, odometer), compliance
+ * section with inline-editable Istimara/Fahes dates, the AI/user
+ * maintenance schedule table (StatusPill + IntervalGauge per row), service
+ * history timeline, and per-year cost totals + cost-per-km. Tasks 4-7's
+ * generate/accept schedule flow and "Mark done" wiring are kept exactly as
+ * they were — this task only restyles/extends the page around them.
  *
  * WHY the `id` param is checked against a UUID shape before ever touching
  * the database: `id` comes straight from the URL, which means it's
@@ -17,15 +18,26 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, desc, eq } from 'drizzle-orm';
 import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { vehicles, scheduleItems, odometerReadings } from '@/lib/db/schema';
+import { getVehicleDetail } from '@/lib/queries';
 import { isValidUuid } from '@/lib/types';
 import { formatKm } from '@/lib/status';
 import { GenerateSchedule } from '@/components/GenerateSchedule';
+import { OdometerReadout } from '@/components/OdometerReadout';
+import { PlateChip } from '@/components/PlateChip';
+import { StatusPill } from '@/components/StatusPill';
+import { IntervalGauge } from '@/components/IntervalGauge';
+import { ComplianceSection } from '@/components/ComplianceSection';
+import { HistoryTimeline } from '@/components/HistoryTimeline';
 
 const AI_SOURCE_TOOLTIP = "AI-recommended — verify against your owner's manual.";
+
+const DECODE_SOURCE_LABEL: Record<'vpic' | 'manual' | 'mixed', string> = {
+  vpic: 'VIN decoded',
+  manual: 'Manual entry',
+  mixed: 'VIN + manual',
+};
 
 export default async function VehiclePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -35,74 +47,96 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
   }
 
   // requireTenant() gives the verified Clerk org id — never trust a
-  // tenant/ownership check based on anything the client sent. Scoping the
-  // query by BOTH id and tenantId in one WHERE clause (rather than
-  // fetching by id and checking tenantId after) means a vehicle belonging
-  // to a different tenant is indistinguishable from one that doesn't exist
-  // at all — a 404, not a 403 that would leak "yes, that id exists".
+  // tenant/ownership check based on anything the client sent. getVehicleDetail
+  // scopes by BOTH id and tenantId in one WHERE clause (rather than fetching
+  // by id and checking tenantId after), so a vehicle belonging to a
+  // different tenant is indistinguishable from one that doesn't exist at
+  // all — a 404, not a 403 that would leak "yes, that id exists".
   const { tenantId } = await requireTenant();
-
   const db = getDb();
-  const [vehicle] = await db
-    .select()
-    .from(vehicles)
-    .where(and(eq(vehicles.id, id), eq(vehicles.tenantId, tenantId)))
-    .limit(1);
+  const detail = await getVehicleDetail(db, tenantId, id, new Date());
 
-  if (!vehicle) {
+  if (!detail) {
     notFound();
   }
 
-  // CONCEPT: Promise.all runs both independent queries concurrently instead
-  // of one after the other — neither query depends on the other's result
-  // (both only need `id`, already known), so awaiting them sequentially
-  // would just add the two round trips together for no reason.
-  const [items, [latestReading]] = await Promise.all([
-    db.select().from(scheduleItems).where(eq(scheduleItems.vehicleId, id)),
-    db
-      .select({ readingKm: odometerReadings.readingKm })
-      .from(odometerReadings)
-      .where(eq(odometerReadings.vehicleId, id))
-      .orderBy(desc(odometerReadings.recordedAt))
-      .limit(1),
-  ]);
+  const { vehicle } = detail;
+  const specLine = [vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' ');
 
   return (
-    <div>
-      <p className="eyebrow">Vehicle</p>
-      <h1 className="mt-3 text-2xl font-semibold text-bone break-words">{vehicle.nickname}</h1>
+    <div className="space-y-8">
+      {/* ------------------------------------------------------------- */}
+      {/* Header                                                        */}
+      {/* ------------------------------------------------------------- */}
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-4">
+          {vehicle.photoUrl && (
+            /* A user-uploaded Vercel Blob URL, not a locally optimizable
+               asset next/image's loader configuration would need to know
+               about ahead of time. */
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={vehicle.photoUrl}
+              alt=""
+              width={64}
+              height={64}
+              className="h-16 w-16 shrink-0 rounded border border-seam object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold text-bone break-words">{vehicle.nickname}</h1>
+              <PlateChip plate={vehicle.plate} />
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {vehicle.vin && <span className="mono-figures text-sm text-steel">{vehicle.vin}</span>}
+              <span className="border border-seam px-2 py-0.5 text-[10px] uppercase tracking-wide text-steel-dim">
+                {DECODE_SOURCE_LABEL[vehicle.decodeSource]}
+              </span>
+            </div>
+            {specLine && <p className="mt-1 text-sm text-steel">{specLine}</p>}
+          </div>
+        </div>
 
-      <dl className="mt-6 grid grid-cols-2 gap-4 border border-seam bg-panel p-5 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-steel">Make</dt>
-          <dd className="mt-1 text-bone">{vehicle.make ?? '—'}</dd>
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          <OdometerReadout km={detail.latestReadingKm} size="sm" />
+          <div className="flex gap-2">
+            <Link
+              href="/odometer"
+              className="border border-seam px-3 py-1.5 text-xs text-steel transition-colors hover:border-steel-dim hover:text-bone"
+            >
+              Log reading
+            </Link>
+            <Link
+              href={`/vehicles/${vehicle.id}/log-service`}
+              className="border border-seam px-3 py-1.5 text-xs font-medium text-bone transition-colors hover:bg-panel-2"
+            >
+              Log service
+            </Link>
+          </div>
         </div>
-        <div>
-          <dt className="text-steel">Model</dt>
-          <dd className="mt-1 text-bone">{vehicle.model ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-steel">Year</dt>
-          <dd className="mono-figures mt-1 text-bone">{vehicle.year ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-steel">Plate</dt>
-          <dd className="mono-figures mt-1 text-bone">{vehicle.plate ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="text-steel">Odometer</dt>
-          <dd className="mono-figures mt-1 text-bone">
-            {latestReading ? formatKm(latestReading.readingKm) : 'No reading yet'}
-          </dd>
-        </div>
-      </dl>
+      </div>
 
-      <div className="mt-8">
+      {/* ------------------------------------------------------------- */}
+      {/* Compliance                                                    */}
+      {/* ------------------------------------------------------------- */}
+      <ComplianceSection
+        vehicleId={vehicle.id}
+        istimaraExpiry={vehicle.istimaraExpiry}
+        istimaraStatus={detail.compliance.istimara}
+        fahesDue={vehicle.fahesDue}
+        fahesStatus={detail.compliance.fahes}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* Maintenance schedule                                          */}
+      {/* ------------------------------------------------------------- */}
+      <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="eyebrow">Maintenance schedule</p>
           {/* Reachable regardless of whether there's a schedule item to
-              attach it to — an unscheduled repair (Task 6) has no row of
-              its own in the table below. */}
+              attach it to — an unscheduled repair has no row of its own in
+              the table below. */}
           <Link
             href={`/vehicles/${vehicle.id}/log-service`}
             className="border border-seam px-3 py-1.5 text-xs text-steel transition-colors hover:border-steel-dim hover:text-bone"
@@ -111,16 +145,17 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
           </Link>
         </div>
 
-        {items.length === 0 ? (
+        {detail.scheduleItems.length === 0 ? (
           <div className="mt-4">
             <GenerateSchedule vehicleId={vehicle.id} />
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto border border-seam bg-panel">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[960px] text-left text-sm">
               <thead>
                 <tr className="border-b border-seam text-steel">
                   <th className="px-3 py-2 font-medium">Item</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
                   <th className="px-3 py-2 font-medium">Interval</th>
                   <th className="px-3 py-2 font-medium">Next due</th>
                   <th className="px-3 py-2 font-medium">Brands</th>
@@ -131,7 +166,7 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {detail.scheduleItems.map(({ item, status, intervalConsumedPct }) => {
                   const interval = [
                     item.intervalKm !== null ? formatKm(item.intervalKm) : null,
                     item.intervalMonths !== null ? `${item.intervalMonths} mo` : null,
@@ -139,18 +174,24 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                     .filter(Boolean)
                     .join(' / ');
 
-                  const nextDue = [
-                    item.nextDueKm !== null ? formatKm(item.nextDueKm) : null,
-                    item.nextDueDate,
-                  ]
+                  const nextDue = [item.nextDueKm !== null ? formatKm(item.nextDueKm) : null, item.nextDueDate]
                     .filter(Boolean)
                     .join(' / ');
 
                   return (
                     <tr key={item.id} className="border-b border-seam last:border-b-0">
                       <td className="px-3 py-2 text-bone">{item.name}</td>
+                      <td className="px-3 py-2">
+                        <StatusPill state={status.state} />
+                      </td>
                       <td className="mono-figures px-3 py-2 text-steel">{interval || '—'}</td>
-                      <td className="mono-figures px-3 py-2 text-steel">{nextDue || '—'}</td>
+                      <td className="px-3 py-2">
+                        <div className="mono-figures text-steel">{nextDue || '—'}</div>
+                        <div className="mono-figures text-xs text-steel-dim">{status.label}</div>
+                        <div className="mt-1.5 w-32">
+                          <IntervalGauge pct={intervalConsumedPct} />
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-steel">
                         {item.brandRecommendations.length > 0 ? item.brandRecommendations.join(', ') : '—'}
                       </td>
@@ -164,10 +205,9 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
                       </td>
                       <td className="px-3 py-2 text-right">
                         {/* `?item=` preselects this row's schedule item on
-                            the log-service form (app/vehicles/[id]/
-                            log-service/page.tsx validates it's actually
-                            THIS vehicle's item before trusting it — the
-                            query string is attacker-controlled). */}
+                            the log-service form (that page validates it's
+                            actually THIS vehicle's item before trusting it —
+                            the query string is attacker-controlled). */}
                         <Link
                           href={`/vehicles/${vehicle.id}/log-service?item=${item.id}`}
                           className="text-xs text-steel underline decoration-seam underline-offset-4 transition-colors hover:text-bone"
@@ -181,6 +221,47 @@ export default async function VehiclePage({ params }: { params: Promise<{ id: st
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* Service history                                               */}
+      {/* ------------------------------------------------------------- */}
+      <div>
+        <p className="eyebrow">Service history</p>
+        <div className="mt-4">
+          <HistoryTimeline entries={detail.history} />
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* Costs                                                         */}
+      {/* ------------------------------------------------------------- */}
+      <div className="border border-seam bg-panel p-5">
+        <p className="eyebrow">Costs</p>
+        {detail.costs.totalsByYear.length === 0 ? (
+          <p className="mt-3 text-sm text-steel">No costed services yet.</p>
+        ) : (
+          <>
+            <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {detail.costs.totalsByYear.map((y) => (
+                <div key={y.year}>
+                  <dt className="text-xs text-steel">{y.year}</dt>
+                  <dd className="mono-figures mt-1 text-bone">{y.totalQar} QAR</dd>
+                </div>
+              ))}
+            </dl>
+
+            {detail.costs.costPerKm !== null && (
+              <div className="mt-4 border-t border-seam pt-4">
+                <p className="mono-figures text-lg text-bone">{detail.costs.costPerKm.toFixed(2)} QAR/km</p>
+                <p className="mt-1 text-xs text-steel">
+                  derived from {detail.costs.serviceCount} service{detail.costs.serviceCount === 1 ? '' : 's'} over{' '}
+                  {formatKm(detail.costs.distanceKm ?? 0)}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

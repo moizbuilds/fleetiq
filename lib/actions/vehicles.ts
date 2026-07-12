@@ -15,11 +15,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
+import { and, eq } from 'drizzle-orm';
 import { put } from '@vercel/blob';
 import { requireTenant } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { vehicles, odometerReadings } from '@/lib/db/schema';
-import { createVehicleInputSchema } from '@/lib/types';
+import { createVehicleInputSchema, updateComplianceDatesInputSchema } from '@/lib/types';
 import { MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
 
 // Shape returned to the client on failure. CONCEPT: useActionState (the
@@ -161,4 +163,53 @@ export async function createVehicle(
   // this line runs — that's expected, not a bug, per the Server Actions
   // guide bundled with this Next.js version.
   redirect(`/vehicles/${vehicleId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Compliance date edit (Task 8) — components/ComplianceSection.tsx's inline
+// "Edit dates" form on the vehicle detail page. Unlike createVehicle above,
+// this action never navigates away: the compliance section stays in place
+// and just re-renders with the saved dates, so there's no redirect() here —
+// only revalidatePath to bust the Router Cache so the page's own
+// server-computed StatusPill/days-remaining labels (derived from these
+// columns) reflect the new dates on the next render.
+// ---------------------------------------------------------------------------
+export interface UpdateComplianceDatesState {
+  error?: string;
+}
+
+export async function updateComplianceDates(rawInput: {
+  vehicleId: string;
+  istimaraExpiry: string | null;
+  fahesDue: string | null;
+}): Promise<UpdateComplianceDatesState> {
+  // Reachable directly (Server Actions compile to a real POST endpoint), so
+  // it re-validates its own input exactly like a public API route would
+  // (globals.md) before ever touching the database.
+  const parsed = updateComplianceDatesInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Some fields need fixing.' };
+  }
+
+  const { tenantId } = await requireTenant();
+  const db = getDb();
+
+  // Scoping the UPDATE's WHERE by BOTH id and tenantId (rather than
+  // fetching by id and checking tenantId after) means a vehicleId belonging
+  // to a different tenant simply updates zero rows — indistinguishable from
+  // a nonexistent id, never a cross-tenant write (globals.md's
+  // tenant-isolation rule). `.returning()` is what lets this action tell
+  // "matched and updated" apart from "matched nothing" in one round trip.
+  const updated = await db
+    .update(vehicles)
+    .set({ istimaraExpiry: parsed.data.istimaraExpiry, fahesDue: parsed.data.fahesDue })
+    .where(and(eq(vehicles.id, parsed.data.vehicleId), eq(vehicles.tenantId, tenantId)))
+    .returning({ id: vehicles.id });
+
+  if (updated.length === 0) {
+    return { error: 'Vehicle not found.' };
+  }
+
+  revalidatePath(`/vehicles/${parsed.data.vehicleId}`);
+  return {};
 }

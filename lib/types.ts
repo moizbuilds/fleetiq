@@ -19,6 +19,8 @@
  */
 import { z } from 'zod';
 import { isValidVin } from './vin';
+import type { ItemStatus } from './status';
+import type { Vehicle, ScheduleItem } from './db/schema';
 
 // ---------------------------------------------------------------------------
 // AI schedule generation (Task 6/7-ish: "AI-recommended" maintenance items)
@@ -171,7 +173,11 @@ export function isValidUuid(id: string): boolean {
 // native `<input type="date">`, which only ever emits that exact format or
 // an empty string — there's no untrusted free-text path that could send
 // "2026-13-45" through this schema in practice.
-const compareDateString = z
+// Exported (not just used below) so lib/actions/vehicles.ts's
+// updateComplianceDates schema (Task 8's inline compliance-date editor) can
+// reuse the exact same YYYY-MM-DD-or-null shape instead of a second regex
+// that could drift from this one.
+export const compareDateString = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.')
   .nullable();
@@ -224,6 +230,22 @@ export const createVehicleInputSchema = z.object({
 });
 
 export type CreateVehicleInput = z.infer<typeof createVehicleInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Compliance date edit (Task 8) — validated server-side in lib/actions/
+// vehicles.ts's updateComplianceDates server action, reached from the
+// vehicle detail page's inline compliance editor
+// (components/ComplianceSection.tsx). Reuses compareDateString (the exact
+// same nullable-YYYY-MM-DD shape createVehicleInputSchema already enforces
+// for these same two columns) rather than a second copy of the regex.
+// ---------------------------------------------------------------------------
+export const updateComplianceDatesInputSchema = z.object({
+  vehicleId: z.string().refine(isValidUuid, { message: 'Vehicle not found.' }),
+  istimaraExpiry: compareDateString,
+  fahesDue: compareDateString,
+});
+
+export type UpdateComplianceDatesInput = z.infer<typeof updateComplianceDatesInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Odometer log (Task 6) — validated server-side in lib/actions/odometer.ts's
@@ -298,3 +320,85 @@ export type {
 // module — see lib/status.ts for the functions that produce this shape.
 // ---------------------------------------------------------------------------
 export type { ItemStatus, ItemState, DueThresholds, IntervalThresholds } from './status';
+
+// ---------------------------------------------------------------------------
+// Dashboard + vehicle detail DTOs (Task 8) — the shared contract between
+// lib/queries.ts (which composes them from vehicles + schedule_items +
+// odometer_readings + service_events, running lib/status.ts's compute
+// functions over the raw rows) and the Server Components that render them
+// (app/page.tsx, app/vehicles/[id]/page.tsx) plus the presentational
+// components underneath (VehicleRow, StatusPill, IntervalGauge, ...). WHY a
+// DTO instead of handing raw Drizzle rows to the page: a dashboard row's
+// "worst item" and its due-status are a real computation (worstFirst over
+// computeItemStatus/computeComplianceStatus), not a column — defining that
+// computed shape once here means the query layer and every component that
+// reads it agree on exactly what fields exist, instead of each page
+// re-deriving (and risking re-implementing slightly differently) the same
+// worst-item logic inline.
+// ---------------------------------------------------------------------------
+// One schedule item OR compliance pseudo-item (Istimara/Fahes), already
+// reduced to its display status. `id` is a real scheduleItems.id for a
+// schedule item, or the literal 'istimara'/'fahes' for a compliance
+// pseudo-item — there's no separate DB row for those, so a real UUID would
+// be misleading.
+export interface RankedStatusItem {
+  id: string;
+  name: string;
+  status: ItemStatus;
+  intervalConsumedPct: number | null;
+}
+
+export interface FleetVehicleStatus {
+  id: string;
+  nickname: string;
+  plate: string | null;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  latestReadingKm: number | null;
+  // Every non-ok schedule/compliance item, worst-first (lib/status.ts's
+  // worstFirst) — VehicleRow renders items[0] as the headline and the rest
+  // as its annunciator lamp strip (capped at 5, "+N" overflow).
+  items: RankedStatusItem[];
+  // items[0]'s status, or a synthesized no_data status when the vehicle has
+  // no schedule items and no compliance dates set at all (nothing tracked
+  // yet, not literally "ok").
+  worst: ItemStatus;
+}
+
+export interface VehicleDetail {
+  vehicle: Vehicle;
+  latestReadingKm: number | null;
+  // Worst-first, same ranking as the dashboard's per-vehicle item list, but
+  // WITHOUT the compliance pseudo-items mixed in — the detail page shows
+  // Istimara/Fahes in their own dedicated compliance section instead.
+  scheduleItems: { item: ScheduleItem; status: ItemStatus; intervalConsumedPct: number | null }[];
+  compliance: {
+    istimara: ItemStatus;
+    fahes: ItemStatus;
+  };
+  // Newest-first service history, one row per service_events row, joined
+  // with the schedule item it completed (null for an unscheduled repair).
+  history: {
+    id: string;
+    title: string;
+    performedOn: string;
+    odometerKm: number;
+    costQar: string | null; // numeric column, read as string (globals.md)
+    notes: string | null;
+    invoicePhotoUrl: string | null;
+    scheduleItemName: string | null;
+  }[];
+  costs: {
+    totalsByYear: { year: number; totalQar: string }[];
+    // total cost (all cost-bearing services, all-time) ÷ (max reading − min
+    // reading) — null when the vehicle has fewer than 2 odometer readings
+    // or its reading span is 0 (can't divide by zero km of driving).
+    // Computed fresh on every read, never stored (globals.md).
+    costPerKm: number | null;
+    // Denominator/caption inputs for costPerKm's "derived from X services
+    // over Y km" UI caption — both null-safe the same way costPerKm is.
+    serviceCount: number;
+    distanceKm: number | null;
+  };
+}
