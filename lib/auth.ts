@@ -60,6 +60,48 @@ async function ensurePersonalOrg(userId: string): Promise<string> {
   return org.id;
 }
 
+// The org-resolution half of tenant lookup, pulled out of requireTenant()
+// so app/api/ai/schedule/route.ts (a Route Handler, not a Server Component)
+// can share it. WHY this must be one function instead of two copies: a
+// Route Handler can't call redirect() the way requireTenant() does for
+// page/Server Action callers — Next.js's redirect() throws a special
+// control-flow signal that only Server Components/Actions know how to catch
+// and turn into an HTTP redirect response; a fetch() caller hitting an API
+// route would just see an unhandled exception. So route.ts has to do its
+// own `auth()` call and its own 401 JSON response, but the actual "which
+// org is this user's tenant" logic — fast path, membership lookup,
+// first-time provisioning — must stay written exactly once, or the two
+// call sites (page loads vs. API calls) would risk drifting on how a tenant
+// gets resolved.
+export async function resolveTenantId(userId: string, orgId: string | null): Promise<string> {
+  // Fast path: the session already carries an active org (either the user
+  // picked one, or `sync-active-org.tsx` set it on a previous request).
+  if (orgId) {
+    return orgId;
+  }
+
+  // No active org on the session — check whether the user is already a
+  // member of one before assuming they need a new one. This is what makes
+  // org creation idempotent: after the very first request, every later
+  // request finds the existing membership here instead of creating another
+  // "My Fleet".
+  const client = await clerkClient();
+  const { data: memberships } = await client.users.getOrganizationMembershipList({
+    userId,
+    limit: 1,
+  });
+
+  if (memberships.length > 0) {
+    return memberships[0].organization.id;
+  }
+
+  // Truly the first time this user has ever been seen — provision their
+  // personal org now. `sync-active-org.tsx` will pick this membership up on
+  // the client and call `setActive()`, so the *next* request takes the fast
+  // path above instead of re-running this lookup.
+  return ensurePersonalOrg(userId);
+}
+
 // CONCEPT: React's `cache()` memoizes a function's result for the lifetime
 // of a single server request — call it from three different Server
 // Components rendering the same page, and the wrapped function's body only
@@ -77,31 +119,6 @@ export const requireTenant = cache(async (): Promise<{ tenantId: string; userId:
     redirect('/sign-in');
   }
 
-  // Fast path: the session already carries an active org (either the user
-  // picked one, or `sync-active-org.tsx` set it on a previous request).
-  if (orgId) {
-    return { tenantId: orgId, userId };
-  }
-
-  // No active org on the session — check whether the user is already a
-  // member of one before assuming they need a new one. This is what makes
-  // org creation idempotent: after the very first request, every later
-  // request finds the existing membership here instead of creating another
-  // "My Fleet".
-  const client = await clerkClient();
-  const { data: memberships } = await client.users.getOrganizationMembershipList({
-    userId,
-    limit: 1,
-  });
-
-  if (memberships.length > 0) {
-    return { tenantId: memberships[0].organization.id, userId };
-  }
-
-  // Truly the first time this user has ever been seen — provision their
-  // personal org now. `sync-active-org.tsx` will pick this membership up on
-  // the client and call `setActive()`, so the *next* request takes the fast
-  // path above instead of re-running this lookup.
-  const tenantId = await ensurePersonalOrg(userId);
+  const tenantId = await resolveTenantId(userId, orgId ?? null);
   return { tenantId, userId };
 });

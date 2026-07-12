@@ -105,6 +105,24 @@ export interface VinDecodeResult {
 }
 
 // ---------------------------------------------------------------------------
+// UUID shape check — shared by every route/page that reads a vehicle (or
+// other row) id straight out of a URL segment or a request body. WHY this
+// needs to be one shared function instead of a regex copy-pasted at each
+// call site: `vehicles.id` is a Postgres `uuid` column, so handing a
+// non-UUID string straight to `eq()` makes Postgres itself throw an
+// "invalid input syntax for type uuid" error — an opaque 500 instead of the
+// clean 404 a well-formed but nonexistent id gets. Both app/vehicles/[id]/
+// page.tsx and app/api/ai/schedule/route.ts need this exact same guard
+// before ever touching the database; keeping it in one place means a future
+// third call site can't accidentally use a looser (or stricter) check.
+// ---------------------------------------------------------------------------
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidUuid(id: string): boolean {
+  return UUID_PATTERN.test(id);
+}
+
+// ---------------------------------------------------------------------------
 // Vehicle creation (Task 4: VIN decode + manual add form) — validated
 // server-side in lib/actions/vehicles.ts's createVehicle server action. The
 // form component (components/VehicleForm.tsx) blocks obviously-bad input
