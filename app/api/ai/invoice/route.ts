@@ -23,9 +23,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { put } from '@vercel/blob';
-import { resolveTenantId } from '@/lib/auth';
+import { getApiAuth, resolveTenantId } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { getAnthropic } from '@/lib/ai/client';
 import { extractInvoice, type InvoiceImage } from '@/lib/ai/invoice';
@@ -48,7 +47,7 @@ const EXTENSION_BY_TYPE: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = await auth();
+  const { userId, orgId } = await getApiAuth();
   if (!userId) {
     return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
   }

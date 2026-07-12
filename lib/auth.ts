@@ -74,6 +74,22 @@ async function ensurePersonalOrg(userId: string): Promise<string> {
 // first-time provisioning — must stay written exactly once, or the two
 // call sites (page loads vs. API calls) would risk drifting on how a tenant
 // gets resolved.
+// API-route auth read. Route Handlers (VIN decode, AI schedule, AI invoice)
+// call Clerk's `auth()` directly rather than `requireTenant()` (they return
+// JSON 401s, not redirects). But `auth()` throws when there's no Clerk
+// middleware in the request — exactly the case in demo mode, where proxy.ts
+// skips Clerk entirely. This helper is the ONE place that branch lives: in
+// demo mode it hands back the fixed demo identity without ever touching
+// Clerk; otherwise it's a plain pass-through to `auth()`. Keeps the three
+// routes from each re-implementing (and drifting on) the same guard.
+export async function getApiAuth(): Promise<{ userId: string | null; orgId: string | null }> {
+  if (isDemoMode()) {
+    return { userId: DEMO_USER_ID, orgId: DEMO_TENANT_ID };
+  }
+  const { userId, orgId } = await auth();
+  return { userId, orgId: orgId ?? null };
+}
+
 export async function resolveTenantId(userId: string, orgId: string | null): Promise<string> {
   // Demo mode (lib/demo.ts) has no Clerk session to derive a tenant from at
   // all — `userId`/`orgId` above wouldn't even be real values in demo mode

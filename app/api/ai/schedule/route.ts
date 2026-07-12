@@ -23,9 +23,8 @@
  * one implementation, two entry points.
  */
 import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { and, eq } from 'drizzle-orm';
-import { resolveTenantId } from '@/lib/auth';
+import { getApiAuth, resolveTenantId } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { vehicles } from '@/lib/db/schema';
 import { isValidUuid } from '@/lib/types';
@@ -37,7 +36,7 @@ const INVALID_BODY_MESSAGE = 'A valid vehicleId is required.';
 const GENERATION_FAILED_MESSAGE = "Couldn't generate a schedule right now — try again in a minute.";
 
 export async function POST(request: Request) {
-  const { userId, orgId } = await auth();
+  const { userId, orgId } = await getApiAuth();
   if (!userId) {
     return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
   }

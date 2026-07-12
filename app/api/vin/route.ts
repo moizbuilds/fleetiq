@@ -25,7 +25,7 @@
  */
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { getApiAuth } from '@/lib/auth';
 import { isValidVin, mapVpicResult } from '@/lib/vin';
 
 // vPIC is a free, unauthenticated NHTSA API — no API key involved. A 10s
@@ -44,7 +44,7 @@ const VPIC_UNREACHABLE_MESSAGE = 'VIN service unreachable — add the vehicle ma
 const INVALID_VIN_MESSAGE = 'Enter a full 17-character VIN (letters I, O, Q are never used).';
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
+  const { userId } = await getApiAuth();
   if (!userId) {
     return NextResponse.json({ error: 'Not signed in' }, { status: 401 });
   }
