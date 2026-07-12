@@ -120,7 +120,11 @@ export async function POST(request: Request) {
   let photoUrl: string | null = null;
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
-      const ext = EXTENSION_BY_TYPE[photo.type] ?? 'jpg';
+      // No `?? 'jpg'` fallback here: photo.type was already checked against
+      // isAllowedPhotoType above (line 84), which only returns true for
+      // exactly the three keys this map defines — an unmapped type can
+      // never reach this line, so a fallback here would be dead code.
+      const ext = EXTENSION_BY_TYPE[photo.type];
       const blob = await put(`invoices/${tenantId}/${randomUUID()}.${ext}`, photo, { access: 'public' });
       photoUrl = blob.url;
     } catch {

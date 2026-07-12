@@ -17,7 +17,7 @@ import { useActionState, useState } from 'react';
 import { completeService, uploadInvoicePhoto, type CompleteServiceState } from '@/lib/actions/services';
 import { ALLOWED_PHOTO_TYPES, MAX_PHOTO_BYTES, isAllowedPhotoType } from '@/lib/photo';
 import { buildNotesFromExtraction } from '@/lib/ai/invoice';
-import type { AiInvoice } from '@/lib/types';
+import { MAX_SERVICE_NOTES_LENGTH, type AiInvoice } from '@/lib/types';
 import { InvoiceScan } from './InvoiceScan';
 
 // A user-entered date field only ever contains YYYY-MM-DD (the native
@@ -293,7 +293,7 @@ export function ServiceForm({
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          maxLength={1000}
+          maxLength={MAX_SERVICE_NOTES_LENGTH}
           rows={3}
           placeholder="Parts used, garage name, anything worth remembering"
           className="w-full border border-seam bg-panel-2 px-3 py-2 text-bone placeholder:text-steel-dim focus-visible:outline-none"

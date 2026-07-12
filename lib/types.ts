@@ -77,6 +77,17 @@ export const aiScheduleSchema = z.object({
 export type AiSchedule = z.infer<typeof aiScheduleSchema>;
 export type AiScheduleItem = z.infer<typeof aiScheduleItemSchema>;
 
+// globals.md's exact required wording for any AI-generated schedule item —
+// "Never 'OEM schedule'". WHY this needs to be a shared constant rather than
+// the sentence typed once in components/ScheduleReview.tsx (the full
+// disclaimer banner) and again in components/ScheduleItemRow.tsx (the same
+// sentence, shortened into a `title` tooltip on each AI-sourced row): two
+// hand-typed copies of a compliance-sensitive exact string is precisely the
+// one-source-of-truth drift globals.md warns about — a future wording tweak
+// applied to one copy and forgotten on the other would leave one of the two
+// surfaces silently out of compliance with the required phrasing.
+export const AI_SCHEDULE_DISCLAIMER = "AI-recommended — verify against your owner's manual.";
+
 // ---------------------------------------------------------------------------
 // AI invoice/receipt extraction (photo of a garage invoice -> prefilled form)
 // ---------------------------------------------------------------------------

@@ -148,7 +148,13 @@ export async function POST(request: Request) {
       { ok: true, vehicleId: vehicle.id, readingKm: parsed.data.readingKm },
       { status: 201 },
     );
-  } catch {
+  } catch (err) {
+    // Logged as message-only — NEVER the raw key header or request body,
+    // both of which are secrets/PII this route must never write to logs.
+    // Without this, the app's one internet-facing endpoint was completely
+    // silent on unexpected failures (a DB outage, a dependency throwing) —
+    // operationally blind to exactly the surface most likely to be probed.
+    console.error('[webhook] unhandled error', err instanceof Error ? err.message : err);
     return NextResponse.json({ error: 'Something went wrong. Try again.' }, { status: 500 });
   }
 }

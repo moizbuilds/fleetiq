@@ -86,7 +86,23 @@ export default async function LogServicePage({
       <h1 className="mt-3 text-2xl font-semibold text-bone break-words">{vehicle.nickname}</h1>
 
       <div className="mt-6">
+        {/* keyed by preselectedItemId (fix, Task 11 pre-flight audit,
+            question 8 — "forms keyed by identity"): `?item=` is a SEARCH
+            param, not a path segment, so navigating from
+            /vehicles/X/log-service?item=A to ?item=B on the same vehicle
+            does NOT change this route's dynamic [id] segment — Next.js's
+            App Router only remounts a route subtree when a PATH segment
+            changes, never for a search-param-only navigation. Without this
+            key, ServiceForm's `useState(preselectedItemId ?? UNSCHEDULED)`
+            initializer only runs on first mount, so clicking "Mark done" on
+            a different schedule item after already opening this page for
+            another one would silently keep the OLD item selected alongside
+            whatever title/notes/photo the user had already typed — a stale
+            form pointed at the wrong maintenance item. Keying by the value
+            that identifies "which target is this form editing" forces a
+            clean remount exactly when that identity changes. */}
         <ServiceForm
+          key={preselectedItemId ?? 'unscheduled'}
           vehicleId={vehicle.id}
           scheduleItems={itemOptions}
           preselectedItemId={preselectedItemId}

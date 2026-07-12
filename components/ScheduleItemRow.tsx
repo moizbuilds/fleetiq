@@ -30,9 +30,14 @@ import { updateScheduleItem } from '@/lib/actions/schedule';
 import { StatusPill } from './StatusPill';
 import { IntervalGauge } from './IntervalGauge';
 import { formatKm } from '@/lib/status';
-import type { ItemStatus, ScheduleItem } from '@/lib/types';
+import { AI_SCHEDULE_DISCLAIMER, type ItemStatus, type ScheduleItem } from '@/lib/types';
 
-const AI_SOURCE_TOOLTIP = "AI-recommended — verify against your owner's manual.";
+// Task 11 pre-flight audit (question 6, one source of truth): this used to
+// be its own hand-typed copy of the exact same sentence components/
+// ScheduleReview.tsx's disclaimer banner shows — now both import the single
+// lib/types.ts constant so the required wording (globals.md) can't drift
+// between the two surfaces.
+const AI_SOURCE_TOOLTIP = AI_SCHEDULE_DISCLAIMER;
 // Exact wording from the coordinator ruling (fix round 1, item 4) — shown
 // instead of the AI disclaimer once a human has edited this item's
 // intervals, since the AI's original recommendation no longer describes
