@@ -1,0 +1,39 @@
+{
+  "garageName": "Wakra Tyre & Battery",
+  "serviceDate": "2026-03-05",
+  "odometerKm": 76140,
+  "totalCostQar": 1095,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 90
+    },
+    {
+      "description": "Oil filter",
+      "partOrService": "part",
+      "costQar": 35
+    },
+    {
+      "description": "Front brake pads",
+      "partOrService": "part",
+      "costQar": 210
+    },
+    {
+      "description": "Battery replacement (80Ah)",
+      "partOrService": "part",
+      "costQar": 300
+    },
+    {
+      "description": "Tyre — rear left",
+      "partOrService": "part",
+      "costQar": 230
+    },
+    {
+      "description": "Tyre — rear right",
+      "partOrService": "part",
+      "costQar": 230
+    }
+  ],
+  "confidenceNotes": ""
+}

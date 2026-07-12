@@ -1,0 +1,19 @@
+{
+  "garageName": "Duhail Auto Works",
+  "serviceDate": "2026-04-15",
+  "odometerKm": 103550,
+  "totalCostQar": 200,
+  "lineItems": [
+    {
+      "description": "Serpentine belt",
+      "partOrService": "part",
+      "costQar": 140
+    },
+    {
+      "description": "Belt installation",
+      "partOrService": "service",
+      "costQar": 60
+    }
+  ],
+  "confidenceNotes": ""
+}

@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run --passWithNoTests",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "eval:invoice": "tsx evals/invoice/run.ts",
+    "eval:schedule": "tsx evals/schedule/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
@@ -33,7 +35,9 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "playwright": "^1.61.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

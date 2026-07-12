@@ -1,0 +1,19 @@
+{
+  "garageName": "Umm Ghuwailina Garage",
+  "serviceDate": "2026-04-02",
+  "odometerKm": 71920,
+  "totalCostQar": 290,
+  "lineItems": [
+    {
+      "description": "Transmission fluid change",
+      "partOrService": "service",
+      "costQar": 200
+    },
+    {
+      "description": "Transmission filter",
+      "partOrService": "part",
+      "costQar": 90
+    }
+  ],
+  "confidenceNotes": ""
+}

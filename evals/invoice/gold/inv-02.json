@@ -1,0 +1,19 @@
+{
+  "garageName": "Doha Motors Workshop",
+  "serviceDate": "2026-02-03",
+  "odometerKm": 88210,
+  "totalCostQar": 309.5,
+  "lineItems": [
+    {
+      "description": "Front brake pads",
+      "partOrService": "part",
+      "costQar": 219.5
+    },
+    {
+      "description": "Brake service labour",
+      "partOrService": "service",
+      "costQar": 90
+    }
+  ],
+  "confidenceNotes": ""
+}

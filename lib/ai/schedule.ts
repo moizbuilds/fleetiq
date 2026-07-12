@@ -21,8 +21,11 @@ import { aiScheduleSchema, type AiSchedule } from '../types';
 
 // The ten maintenance categories every generated schedule must cover (see
 // task-5-brief.md) — spelled out in the prompt itself so the model can't
-// quietly drop one under token pressure.
-const REQUIRED_CATEGORIES = [
+// quietly drop one under token pressure. Exported (not just used below) so
+// Task 10's evals/schedule/run.ts can check a real response against this
+// EXACT list instead of a second, hand-typed copy that could silently drift
+// out of sync with what the prompt actually asks for.
+export const REQUIRED_CATEGORIES = [
   'oil change',
   'oil filter',
   'air filter',

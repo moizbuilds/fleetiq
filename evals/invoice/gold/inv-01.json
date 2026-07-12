@@ -1,0 +1,24 @@
+{
+  "garageName": "Al Rayyan Auto Care",
+  "serviceDate": "2026-01-14",
+  "odometerKm": 45231,
+  "totalCostQar": 159.75,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 79.5
+    },
+    {
+      "description": "Oil filter",
+      "partOrService": "part",
+      "costQar": 35.25
+    },
+    {
+      "description": "Air filter",
+      "partOrService": "part",
+      "costQar": 45
+    }
+  ],
+  "confidenceNotes": ""
+}

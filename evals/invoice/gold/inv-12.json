@@ -1,0 +1,19 @@
+{
+  "garageName": "Al Khor Garage",
+  "serviceDate": "2026-01-30",
+  "odometerKm": 55890,
+  "totalCostQar": 165,
+  "lineItems": [
+    {
+      "description": "Cabin air filter",
+      "partOrService": "part",
+      "costQar": 45
+    },
+    {
+      "description": "AC system service",
+      "partOrService": "service",
+      "costQar": 120
+    }
+  ],
+  "confidenceNotes": ""
+}

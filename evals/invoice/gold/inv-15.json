@@ -1,0 +1,19 @@
+{
+  "garageName": "Gharrafa Auto Care",
+  "serviceDate": "2026-04-22",
+  "odometerKm": 21980,
+  "totalCostQar": 230,
+  "lineItems": [
+    {
+      "description": "Coolant flush",
+      "partOrService": "service",
+      "costQar": 130
+    },
+    {
+      "description": "Serpentine belt",
+      "partOrService": "part",
+      "costQar": 100
+    }
+  ],
+  "confidenceNotes": ""
+}

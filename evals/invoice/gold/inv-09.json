@@ -1,0 +1,19 @@
+{
+  "garageName": "Barwa Village Auto",
+  "serviceDate": "2026-02-27",
+  "odometerKm": 39412,
+  "totalCostQar": 250,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 150
+    },
+    {
+      "description": "Labour",
+      "partOrService": "other",
+      "costQar": 100
+    }
+  ],
+  "confidenceNotes": ""
+}

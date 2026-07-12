@@ -1,0 +1,19 @@
+{
+  "garageName": "Salwa Road Auto Center",
+  "serviceDate": "2026-03-22",
+  "odometerKm": 94300,
+  "totalCostQar": 210,
+  "lineItems": [
+    {
+      "description": "Coolant flush",
+      "partOrService": "service",
+      "costQar": 150
+    },
+    {
+      "description": "Coolant (5L)",
+      "partOrService": "part",
+      "costQar": 60
+    }
+  ],
+  "confidenceNotes": ""
+}

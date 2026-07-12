@@ -1,0 +1,24 @@
+{
+  "garageName": "Industrial Area Garage 24",
+  "serviceDate": "2026-01-27",
+  "odometerKm": 132870,
+  "totalCostQar": 540,
+  "lineItems": [
+    {
+      "description": "Tyre — front left",
+      "partOrService": "part",
+      "costQar": 240
+    },
+    {
+      "description": "Tyre — front right",
+      "partOrService": "part",
+      "costQar": 240
+    },
+    {
+      "description": "Wheel alignment",
+      "partOrService": "service",
+      "costQar": 60
+    }
+  ],
+  "confidenceNotes": ""
+}

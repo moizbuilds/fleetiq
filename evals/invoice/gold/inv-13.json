@@ -1,0 +1,19 @@
+{
+  "garageName": "Mesaieed Fleet Services",
+  "serviceDate": "2026-02-11",
+  "odometerKm": 158700,
+  "totalCostQar": 120,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 85
+    },
+    {
+      "description": "Oil filter",
+      "partOrService": "part",
+      "costQar": 35
+    }
+  ],
+  "confidenceNotes": ""
+}

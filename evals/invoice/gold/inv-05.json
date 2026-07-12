@@ -1,0 +1,19 @@
+{
+  "garageName": "Corniche Car Clinic",
+  "serviceDate": "2026-02-19",
+  "odometerKm": 27655,
+  "totalCostQar": 105,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 75
+    },
+    {
+      "description": "Oil filter",
+      "partOrService": "part",
+      "costQar": 30
+    }
+  ],
+  "confidenceNotes": ""
+}

@@ -1,0 +1,19 @@
+{
+  "garageName": "Al Sadd Service Point",
+  "serviceDate": "2026-01-08",
+  "odometerKm": null,
+  "totalCostQar": 330,
+  "lineItems": [
+    {
+      "description": "General service",
+      "partOrService": "service",
+      "costQar": 250
+    },
+    {
+      "description": "Spark plugs (set)",
+      "partOrService": "part",
+      "costQar": 80
+    }
+  ],
+  "confidenceNotes": ""
+}

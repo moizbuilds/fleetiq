@@ -1,0 +1,54 @@
+{
+  "garageName": "Lusail Motors",
+  "serviceDate": "2026-03-30",
+  "odometerKm": 18205,
+  "totalCostQar": 615,
+  "lineItems": [
+    {
+      "description": "Engine oil change",
+      "partOrService": "service",
+      "costQar": 70
+    },
+    {
+      "description": "Oil filter",
+      "partOrService": "part",
+      "costQar": 30
+    },
+    {
+      "description": "Air filter",
+      "partOrService": "part",
+      "costQar": 40
+    },
+    {
+      "description": "Cabin filter",
+      "partOrService": "part",
+      "costQar": 35
+    },
+    {
+      "description": "Front brake pads",
+      "partOrService": "part",
+      "costQar": 200
+    },
+    {
+      "description": "Rear brake pads",
+      "partOrService": "part",
+      "costQar": 180
+    },
+    {
+      "description": "Wiper blades (pair)",
+      "partOrService": "part",
+      "costQar": 25
+    },
+    {
+      "description": "Battery terminal cleaning",
+      "partOrService": "service",
+      "costQar": 15
+    },
+    {
+      "description": "Coolant top-up",
+      "partOrService": "service",
+      "costQar": 20
+    }
+  ],
+  "confidenceNotes": ""
+}

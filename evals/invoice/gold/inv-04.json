@@ -1,0 +1,19 @@
+{
+  "garageName": "Al Wakrah Fast Fit",
+  "serviceDate": "2026-03-11",
+  "odometerKm": 61045,
+  "totalCostQar": 330,
+  "lineItems": [
+    {
+      "description": "Battery replacement (70Ah)",
+      "partOrService": "part",
+      "costQar": 310
+    },
+    {
+      "description": "Battery installation",
+      "partOrService": "service",
+      "costQar": 20
+    }
+  ],
+  "confidenceNotes": ""
+}
