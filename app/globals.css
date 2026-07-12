@@ -1,0 +1,147 @@
+/*
+ * Global stylesheet + design tokens for FleetIQ.
+ *
+ * What this file does: defines the app's entire visual language as CSS
+ * custom properties ("design tokens" — named values like colors/fonts that
+ * every component reads from instead of hard-coding), then wires those
+ * tokens into Tailwind v4's `@theme` block so utility classes like
+ * `bg-chassis` or `text-bone` exist. It also defines two hand-rolled
+ * utility classes (`.eyebrow`, `.mono-figures`) for the "stencil label" and
+ * "always-tabular numerals" look used throughout the app (odometer digits,
+ * km, QAR amounts, dates).
+ *
+ * WHY tokens instead of raw hex codes everywhere: FleetIQ is a dark-only,
+ * industrial-instrument-panel look (see .superpowers/sdd/globals.md). If a
+ * color like the panel surface ever needs to shift half a shade, changing
+ * one variable here updates every component — the naive alternative
+ * (pasting #1E2128 into 30 files) would drift the moment one file was
+ * missed.
+ */
+
+@import "tailwindcss";
+
+/* CONCEPT: CSS custom properties (the `--name: value` syntax) are
+   variables in plain CSS — declared once on :root (the <html> element) and
+   readable anywhere via var(--name). Tailwind v4 reads config from CSS
+   itself instead of a JS file, which is why tokens live here. */
+:root {
+  /* Surfaces — from darkest (page) to lightest (hover/inset) */
+  --chassis: #16181d; /* page base — graphite blue-black */
+  --panel: #1e2128; /* raised surfaces (cards, nav rail) */
+  --panel-2: #23272f; /* hover / inset surfaces */
+  --seam: #2c313b; /* borders, hairlines */
+
+  /* Text */
+  --bone: #e8e6e0; /* primary text */
+  --steel: #8b919e; /* secondary text */
+  --steel-dim: #5c616c; /* tertiary / disabled text */
+
+  /* Status — the ONLY saturated colors in the app, and ONLY for status
+     (overdue / due-soon / ok). Never used decoratively. */
+  --red: #e5484d;
+  --amber: #ffb224;
+  --green: #46a758;
+
+  /* Font stacks, populated by next/font/google in app/layout.tsx and
+     exposed here as CSS variables so both Tailwind and plain CSS can use
+     them (see @theme block below). */
+  --font-archivo: "Archivo", sans-serif;
+  --font-plex-mono: "IBM Plex Mono", monospace;
+}
+
+/* Tailwind v4 config-in-CSS: mapping our tokens into Tailwind's theme
+   makes them available as utilities, e.g. `bg-chassis`, `text-bone`,
+   `border-seam`, `font-mono`. WHY `@theme` instead of a tailwind.config.js
+   `extend` block: Tailwind v4 moved config out of JS and into CSS so the
+   design tokens and their usage live in one file — the naive old way
+   required keeping a JS config and this CSS file in sync by hand. */
+@theme {
+  --color-chassis: var(--chassis);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-seam: var(--seam);
+  --color-bone: var(--bone);
+  --color-steel: var(--steel);
+  --color-steel-dim: var(--steel-dim);
+  --color-red: var(--red);
+  --color-amber: var(--amber);
+  --color-green: var(--green);
+
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-plex-mono);
+}
+
+/* FleetIQ is dark-only (no light theme toggle) — telling the browser via
+   color-scheme keeps native form controls, scrollbars, etc. dark too. */
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--chassis);
+  color: var(--bone);
+  font-family: var(--font-archivo), sans-serif;
+}
+
+/* Visible keyboard focus everywhere — required by globals.md for
+   accessibility. `:focus-visible` (not `:focus`) so mouse clicks don't
+   show the ring, only keyboard/assistive-tech navigation does. */
+:focus-visible {
+  outline: 2px solid var(--bone);
+  outline-offset: 2px;
+}
+
+/* "Eyebrow" label — the small uppercase stencil-style tag used above
+   section headings and for the wordmark (e.g. "DASHBOARD", "FLEETIQ").
+   Named after the print/editorial term for a small label above a headline. */
+.eyebrow {
+  font-family: var(--font-archivo), sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+
+/* Every numeral in the app (odometer readouts, km, QAR amounts, dates)
+   renders in IBM Plex Mono with tabular figures so digits don't jiggle
+   sideways as they change — critical for the "ignition self-test" digit
+   roll animation and for scanning columns of numbers at a glance.
+   CONCEPT: font-variant-numeric: tabular-nums forces every digit glyph to
+   the same width (normally "1" is narrower than "8" in most fonts). */
+.mono-figures {
+  font-family: var(--font-plex-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Nameplate" — the FLEETIQ wordmark, styled like a stamped ID plate
+   riveted to equipment (crate-marking stencil feel) rather than a logo
+   lockup. The corner ticks are the one deliberate flourish in the nav —
+   everything else in the shell stays quiet by comparison. */
+.nameplate {
+  position: relative;
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px solid var(--seam);
+  background: var(--panel-2);
+}
+
+.nameplate::before,
+.nameplate::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid var(--steel-dim);
+}
+
+.nameplate::before {
+  left: -1px;
+  border-left: 1px solid var(--steel-dim);
+}
+
+.nameplate::after {
+  right: -1px;
+  border-right: 1px solid var(--steel-dim);
+}
